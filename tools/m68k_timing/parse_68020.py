@@ -19,7 +19,13 @@ SECTS = [('8.2.1','fea'),('8.2.2','fiea'),('8.2.3','cea'),('8.2.4','ciea'),('8.2
 
 CC = re.compile(r'^(\d+)\+?\((\d+)/(\d+)/(\d+)\)\+?$')
 NOISE = re.compile(r'^(MOTOROLA|M68020 USER.S MANUAL|8-\d+|=====.*|\s*|Instruction|Best Case|'
-                   r'Cache Case|Worst Case|Address Mode|Operand|Instruction Timings.*|\*+|\++|#+)$')
+                   r'Cache Case|Worst Case|Address Mode|Operand|Instruction Timings.*)$')
+# footnote markers sit on their own line just above the mnemonic they belong to.
+# The legend at the foot of each table reads:
+#   *  Add Fetch Effective Address Time
+#   ** Add Fetch Immediate Effective Address Time
+#   +  Indicates Maximum Time (actual time is data dependent)
+MARK = re.compile(r'^[*#%+]{1,3}$')
 
 def main(path):
     lines = open(path, encoding='utf-8').read().split('\n')
@@ -32,7 +38,7 @@ def main(path):
     starts.append((len(lines), 'END'))
 
     w = csv.writer(sys.stdout)
-    w.writerow(['section','instruction','best','best_r','best_p','best_w',
+    w.writerow(['section','instruction','notes','best','best_r','best_p','best_w',
                 'cache','cache_r','cache_p','cache_w','worst','worst_r','worst_p','worst_w'])
     total = 0
     for (lo, tag), (hi, _) in zip(starts, starts[1:]):
@@ -45,7 +51,9 @@ def main(path):
             if i + 2 < hi:
                 a, b, c = lines[i].strip(), lines[i+1].strip(), lines[i+2].strip()
                 if CC.match(a) and CC.match(b) and CC.match(c):
-                    w.writerow([tag, ' '.join(buf).strip(),
+                    marks = ''.join(x for x in buf if MARK.match(x))
+                    label = ' '.join(x for x in buf if not MARK.match(x)).strip()
+                    w.writerow([tag, label, marks,
                                 *CC.match(a).groups(), *CC.match(b).groups(), *CC.match(c).groups()])
                     total += 1; buf = []; i += 3; continue
             buf.append(ln)

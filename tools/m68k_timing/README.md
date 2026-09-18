@@ -58,3 +58,64 @@ addressing-mode names across several lines and several sub-headings, so some
 rows in those sections carry a run-together label. The numbers are right; the
 labels in those five sections need a pass before they can be mapped onto
 addressing modes. The per-instruction tables (11.6.6 - 11.6.18) come out clean.
+
+## From tables to ROM images
+
+`decode.py` maps an opcode onto the table row that describes it, and
+`gen_cycle_rom.py` / `gen_ea_rom.py` turn the result into M10K images:
+
+    python3 gen_cycle_rom.py 68030 > ../../rtl/tg68k/m68k_cycles_030.mif
+    python3 gen_ea_rom.py    68030 > ../../rtl/tg68k/m68k_ea_030.mif
+
+Both report their coverage on stderr and name every row they could not find,
+so a gap is visible rather than silent.
+
+**The instruction ROM** is indexed by `{opcode[15:6], opcode[5:3]}` - 8192
+entries of 20 bits, 16 M10K. Those thirteen bits are what the timing turns on:
+`opcode[2:0]` is always a register number, except through mode 7 where it picks
+the addressing mode, and that goes to the effective-address ROM instead.
+
+    [19] valid  [18:16] ea_class  [15:14] tail  [13:9] head  [8:1] cc
+
+A form with no table row behind it is emitted with `valid` clear and the RTL
+keeps using the averaged divider for it. Nothing in these images is estimated.
+
+**The effective-address ROM** is indexed by
+`{ea_class, opcode[7:6], opcode[5:0]}` - 2048 entries of 16 bits, 4 M10K.
+
+    [15] valid  [14:8] cc  [7:3] head  [2:1] tail
+
+The RTL composes the two by equation 11-2:
+
+    cc    = ea_cc + op_cc - min(op_head, ea_tail)
+    head  = ea_head (plus op_head where the table says "X + op head")
+    tail  = op_tail
+
+and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
+
+### Coverage today
+
+| ROM | state |
+|---|---|
+| 68030 instructions | 7601 of 8192 slots on a table row (92.8%), no unresolved rows |
+| 68030 effective addresses | fea and the transcribed cea and jea rows resolve; ciea and part of jea still open |
+| 68020 instructions | 58%: the 68020 manual names the same forms differently and its MOVE table is a matrix |
+
+### What is still open
+
+* **ciea, and the rest of jea.** The five effective-address tables are laid out
+  in the PDF in a way the text extraction interleaves wrongly. cea and the
+  first page of jea are transcribed from the page images into `gen_ea_rom.py`
+  with the page cited; ciea and jea's continuation need the same treatment.
+* **The 68020 label aliases.** Its tables call the same form by another name -
+  `ADD Rn,Dn` is `ADD EA,Dn` there, `MULU.W` is `MUL.W`, `TST Dn`/`TST Mem` is
+  one `TST EA` row, the shifts are spelled out per direction. A per-CPU alias
+  map closes this.
+* **The 68020 MOVE table** is a 414-cell source-by-destination matrix. A
+  line-based parse cannot read it; it needs a coordinate-aware pass.
+* **MOVEM** costs 4+2n clocks with n in the extension word, and **DIVS.L vs
+  DIVU.L** is decided by the extension word too. Neither is in the ROM index.
+  MOVEM is left to the fallback; a signed long divide is charged 12 clocks light.
+* **Bcc** is charged as taken. Not-taken byte branches are 2 clocks less, and
+  whether a branch is taken is not something the ROM can know - the RTL has the
+  signal and can correct it.
