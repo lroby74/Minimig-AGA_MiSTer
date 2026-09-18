@@ -77,6 +77,11 @@ initial begin
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'h0690); n=n+1; end end_run;
 	report("ADDI.L #x,(A0)  (3 + fiea 4)", 6.0);
 
+	// JSR (A0): the operation is 4/0/0 and the jump address is 2 with a head
+	// that takes in the operation's, so composed it is 6 with head 2.
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E90); n=n+1; end end_run;
+	report("JSR (A0)  (4 + jea 2)", 6.0);
+
 	// Bcc.B: 4 clocks when not taken, 6 when taken. opc_cond carries the
 	// outcome of the instruction before, so it is set for the taken case.
 	opc_cond = 0;

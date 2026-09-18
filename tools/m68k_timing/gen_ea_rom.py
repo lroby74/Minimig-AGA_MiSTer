@@ -71,13 +71,20 @@ CEA = {
 }
 
 
-# 11.6.5 Jump Effective Address, page 11-35. Same story as cea: transcribed
-# from the page. Only the modes JMP and JSR accept appear here; the rest of
-# the table runs onto the following page and is not yet transcribed.
+# 11.6.5 Jump Effective Address, page 11-35, transcribed from the page.
+#
+# That page prints its first two rows as "Dn" and "An", which JMP and JSR
+# cannot take. They are typos: the 68020 manual's jump table carries the same
+# sequence of values in the same order - 2, 4, 2, 2, 6 - and labels those two
+# rows (An) and (d16,An). Read that way here, on the strength of the second
+# document rather than on a guess.
 JEA = {
+    (2, 0): (2, 2, 0, 1),   # (An)               2 + op head
+    (5, 0): (4, 4, 0, 1),   # (d16,An)           4 + op head
+    (6, 0): (6, 6, 0, 1),   # (d8,An,Xn) brief   6 + op head
     (7, 0): (2, 2, 0, 1),   # (xxx).W            2 + op head
     (7, 1): (2, 2, 0, 1),   # (xxx).L            2 + op head
-    (6, 0): (6, 6, 0, 1),   # (d8,An,Xn) brief   6 + op head
+    (7, 2): (4, 4, 0, 1),   # (d16,PC)           4 + op head
     (7, 3): (6, 6, 0, 1),   # (d8,PC,Xn) brief   6 + op head
 }
 

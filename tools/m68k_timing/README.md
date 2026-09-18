@@ -103,12 +103,9 @@ and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 
 ### What is still open
 
-* **The rest of jea.** The five effective-address tables are laid out in the
-  PDF in a way the text extraction interleaves wrongly. cea (page 11-31), ciea
-  (11-33) and the first page of jea (11-35) are transcribed from the page
-  images into `gen_ea_rom.py` with the page cited. jea's continuation, which
-  holds the modes JMP and JSR take beyond the absolute and brief-format ones,
-  is the last piece still reading from the text extraction.
+* **The full-format addressing modes.** The memory-indirect forms of every
+  effective-address table are still on the text extraction rather than
+  transcribed. TG68K's support for them is partial anyway.
 * **The 68020 label aliases.** Its tables call the same form by another name -
   `ADD Rn,Dn` is `ADD EA,Dn` there, `MULU.W` is `MUL.W`, `TST Dn`/`TST Mem` is
   one `TST EA` row, the shifts are spelled out per direction. A per-CPU alias
@@ -181,3 +178,33 @@ Section 11.5's first worked example gives `SUBA.L D1,A2` a head of 4 and a
 cache case of 4, and totals the example at 6 clocks. The table in 11.6.8 gives
 `SUBA.L Rn,An` 2/0/2 - the 4 belongs to the `.W` row - so the example totals 4.
 The tables are what this implementation follows.
+
+
+## The 68020 manual as a second opinion
+
+The 68030 is a 68020 with an MMU and a data cache, so the two share their
+instruction set and their tables share their shape - but not their numbers.
+Comparing the forms that appear in both:
+
+| form | 68030 | 68020 |
+|---|---|---|
+| `ADD Dn,EA` | 3 | 4 |
+| `CLR Mem` | 3 | 4 |
+| `ADDQ #x,Mem` | 3 | 4 |
+| `RTS` | 9 | 10 |
+| `JSR` | 4 | 5 |
+| `fea (An)+` | 3 | 4 |
+| `ADD EA,Dn` | 2 | 2 |
+| `TST` | 2 | 2 |
+| `LEA` | 2 | 2 |
+
+Seven of twelve differ: anything with a memory operand is a clock cheaper on
+the 68030, which is the data cache the 68020 does not have. So the 68020
+numbers cannot stand in for the 68030's, and each mode needs its own table.
+
+What the 68020 manual is good for is checking the 68030's. Page 11-35 prints
+the first two rows of the jump table as `Dn` and `An`, which JMP and JSR
+cannot take. The 68020's jump table carries the same values in the same order
+- 2, 4, 2, 2, 6 - and labels those rows `(An)` and `(d16,An)`. That is what
+they are, on the strength of a second document rather than a guess, and it is
+how `JSR (A0)` came to be charged 6 clocks instead of falling back to 2.
