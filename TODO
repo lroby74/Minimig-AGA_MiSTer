@@ -9,7 +9,7 @@ IMPORTANT - AGA CHIPSET stuff
   counter bits in denise; tools/aga/tb_hwindow.v)
 - actually, all (horizontal) comparators in AGA chipset have 35ns resolution
   - display window DONE, sprites DONE, BPLCON1 scroll was already there
-  - HBSTRT/HBSTOP still at 140ns (only matter with VARBEAMEN set)
+  - HBSTRT/HBSTOP DONE (bits 10-8, tools/aga/tb_hblank.v)
 - http://eab.abime.net/showpost.php?p=669147&postcount=77
 - bitplane shifter problems 
   * more 'undocumented' stuff ... (looks like the output shifter is actually 256 bit to allow 64-pixel fetches in lowres to be shifted on shres resolution - implemented)

@@ -82,6 +82,25 @@ and states the interlock that goes with it:
 For sprites the same two bits are in SPRxCTL, bit 04 SH1 at 70 ns and bit 03
 SH0 at 35 ns, with bit 00 SH2 the 140 ns bit that ECS already had.
 
+The AA specification does not print the layout for HBSTRT and HBSTOP; the
+coding reference does, and it is the same shape one step further down:
+
+> Bits 7-0 contain the stop and start positions, respectively, for programed
+> horizontal blanking in 280nS increments. Bits 10-8 provide a fine position
+> control in 35nS increments.
+>
+>     BIT#   FUNCTION   DESCRIPTION
+>     15-11  x          (unused)
+>     10     H2         140nS
+>     09     H1          70nS
+>     08     H0          35nS
+>     07     H10      35840nS
+>     ...
+>     00     H3         280nS
+
+It prints bit 10 as a second `H1`, which the description column contradicts
+and the AA specification's renaming rule settles: the 140 ns bit is H2.
+
 **Sprite resolution.** BPLCON3 bits 6-7 set it independently of the bitplane
 resolution: 00 ECS default, 01 lo-res 140 ns, 10 hi-res 70 ns, 11 super-hires
 35 ns. The AA specification also states sprites can now be positioned at 35 ns

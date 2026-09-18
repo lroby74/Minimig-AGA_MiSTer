@@ -107,6 +107,25 @@ write at a chosen point relative to a known fetch. Nine cases:
 The last three are the rule in one line each: the old value is used, and the
 write was still accepted.
 
+## tb_hblank - the programmable blanking at 35 ns
+
+HBSTRT and HBSTOP hold an eleven bit position and the AGA register reference
+gives the layout outright: bits 7-0 are the 280 ns field ECS already had, bit
+10 is 140 ns, bits 9 and 8 are 70 ns and 35 ns. Minimig read only bits 7-0 and
+shifted them up by one, which threw away all three of the new ones - there was
+a `TODO fix this` on the line. The same delayed-match treatment applies, and
+these only do anything with VARBEAMEN set in BEAMCON0.
+
+Fourteen cases, the whole ladder again:
+
+    HBSTRT $40 HBSTOP $60, no fine bits: blank on at tick 512, off at 768
+      HBSTRT +1 is 280ns, 8 ticks                            8  want     8  OK
+      HBSTRT bit 10 is 140ns, 4 ticks                        4  want     4  OK
+      HBSTRT bits 9,8 = 3 move the start                     3  want     3  OK
+      HBSTOP bits 9,8 = 2 move the end                       2  want     2  OK
+      bit 10 and bits 9,8 together                           7  want     7  OK
+      ECS ignores bits 10-8, start                         512  want   512  OK
+
 ## Cost
 
 Yosys ALM mapping for Cyclone V, as each piece went in.
@@ -122,8 +141,13 @@ Bitplane DMA:
     before          ALUTs  708 (~ 354 ALM)  FFs  416  MLAB 40
     pointer delay   ALUTs  732 (~ 366 ALM)  FFs  472  MLAB 40
 
-Twenty-five ALMs and a hundred and sixty flip-flops for all three, on a device
-with 41910 ALMs. The sprite flip-flops are eight sprites' worth. Writing the
+Beam counter:
+
+    before          ALUTs  564 (~ 282 ALM)  FFs  310
+    blanking at 35ns ALUTs 580 (~ 290 ALM)  FFs  332
+
+Thirty-three ALMs and a hundred and eighty-two flip-flops for all four, on a
+device with 41910 ALMs. The sprite flip-flops are eight sprites' worth. Writing the
 pointer banks per plane instead would have cost 273 ALMs and thrown away the
 40 distributed-memory blocks they infer, which is why the write waits for the
 port rather than getting one of its own.

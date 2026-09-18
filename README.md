@@ -161,11 +161,13 @@ cycle before the matching BPLxDAT fetch goes nowhere, because the DMA channel ha
 address a cycle ahead of the fetch; and a write to BPLxMOD one cycle before a modulo add
 does not change that add, though it is still accepted for the next one.
 
-`tools/aga/run_tb.sh` checks all of it - forty cases against Commodore's own AA chipset
-specification, quoted in `doc/amiga/aga/SOURCES.md`. The whole lot costs twenty-five
-ALMs and a hundred and sixty flip-flops.
+* **HBSTRT/HBSTOP** bits 10, 9 and 8 for the programmable blanking, 140/70/35 ns under
+  the 280 ns field ECS had. Only in effect with VARBEAMEN set in BEAMCON0.
 
-Still at 140 ns: HBSTRT and HBSTOP, which only matter with VARBEAMEN set.
+`tools/aga/run_tb.sh` checks all of it - fifty-one cases against Commodore's own AA
+chipset specification and the AGA register reference, both quoted in
+`doc/amiga/aga/SOURCES.md`. The whole lot costs thirty-three ALMs and a hundred and
+eighty-two flip-flops.
 
 ### IDE and CDROM
 By default up to 2 IDE devices are supported. For Secondary Master/Slave devices, you have to install either IDEFix97 (shareware, WB3.1/3.9) or AtapiMagic (freeware, WB 3.1.4/3.2).
