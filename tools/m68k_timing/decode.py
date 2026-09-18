@@ -89,15 +89,15 @@ def decode(op):
         if op & 0xFFF8 in (0x4880, 0x48C0, 0x49C0):
             return ('single', 'EXT Dn', NONE)                            # EXT.W/.L, EXTB.L
         if op & 0xFB80 == 0x4880:
-            # MOVEM costs 4+2n clocks, n being the register count, which lives
-            # in the extension word and so outside this ROM's index. Left to
-            # the fallback rather than pinned to a wrong constant.
+            # MOVEM's register count lives in the extension word, outside
+            # this ROM's index, so rtl/cpu_cycles.v counts the mask and builds
+            # the entry itself. Nothing for the ROM to hold.
             return None
         if op & 0xFFC0 == 0x4C00: return ('arith', 'MULU.L EA,Dn', FIEA)
         if op & 0xFFC0 == 0x4C40:
             # The signed/unsigned bit is in the extension word, out of index.
-            # DIVU.L is 78 clocks and DIVS.L 90, so a signed divide is charged
-            # 12 clocks light.
+            # DIVU.L is 78 clocks and DIVS.L 90; the entry carries the 78 and
+            # rtl/cpu_cycles.v adds the 12 when it sees the bit set.
             return ('arith', 'DIVU.L EA,Dn', FIEA)
         if op & 0xFFC0 == 0x4A00 or op & 0xFFC0 == 0x4A40 or op & 0xFFC0 == 0x4A80:
             return ('single', 'TST ' + ('Mem' if mem else 'Dn'), FEA if mem else NONE)

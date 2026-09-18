@@ -44,6 +44,7 @@ architecture sim of tb_cpi is
 	signal opc_start : std_logic;
 	signal opc_out   : std_logic_vector(15 downto 0);
 	signal opc_cond  : std_logic;
+	signal opc_snd   : std_logic_vector(15 downto 0);
 
 	type ram_t is array (0 to 65535) of std_logic_vector(15 downto 0);
 	shared variable ram : ram_t := (others => x"4E71");
@@ -65,7 +66,8 @@ begin
 			longword => longword, nResetOut => nresetout, FC => fc,
 			clr_berr => clr_berr, skipFetch => skipf, regin_out => regin,
 			CACR_out => cacr, D_CACHE_out => dcache, VBR_out => vbr,
-			opc_start => opc_start, opc_out => opc_out, opc_cond => opc_cond);
+			opc_start => opc_start, opc_out => opc_out, opc_cond => opc_cond,
+			opc_snd => opc_snd);
 
 	addr_w <= to_integer(unsigned(addr_out(16 downto 1)));
 
@@ -110,20 +112,32 @@ begin
 		variable started: boolean := false;
 		variable first  : std_logic_vector(15 downto 0);
 		variable l      : line;
+		-- a line is held back one cycle: sndOPC takes the word after the
+		-- opcode in the same clkena opc_start is in, so it has settled by the
+		-- next one, which is where rtl/cpu_cycles.v reads it too
+		variable pend   : boolean := false;
+		variable p_op   : std_logic_vector(15 downto 0);
+		variable p_cond : std_logic;
 	begin
 		if rising_edge(clk) and nreset = '1' then
 			if TRACE /= "" and not topen then
 				file_open(tf, TRACE, write_mode); topen := true;
 			end if;
 			cyc := cyc + 1;
+			if pend then
+				-- the opcode, the condition of the one before it, and the word after it
+				write(tl, to_integer(unsigned(p_op)));
+				write(tl, string'(" "));
+				if p_cond = '1' then write(tl, 1); else write(tl, 0); end if;
+				write(tl, string'(" "));
+				write(tl, to_integer(unsigned(opc_snd)));
+				writeline(tf, tl);
+				pend := false;
+			end if;
 			if opc_start = '1' then
 				n := n + 1;
-				if topen and n > WARMUP and n <= WARMUP + COUNT then
-					-- the opcode starting, and the condition of the one before
-					write(tl, to_integer(unsigned(opc_out)));
-					write(tl, string'(" "));
-					if opc_cond = '1' then write(tl, 1); else write(tl, 0); end if;
-					writeline(tf, tl);
+				if topen and n > WARMUP and n < WARMUP + COUNT then
+					p_op := opc_out; p_cond := opc_cond; pend := true;
 				end if;
 				if n = WARMUP then
 					t0 := cyc; started := true; first := opc_out;

@@ -30,6 +30,7 @@ module cpu_cycles
 	input             opc_start,    // one clkena as an instruction begins
 	input      [15:0] opc,
 	input             opc_cond,     // condition of the instruction before it
+	input      [15:0] opc_snd,      // the word after it, settled one clock later
 	input             cpu_ena,      // the enable the CPU is actually getting
 
 	output            hold          // hold the CPU: it has not paid for the last one
@@ -55,14 +56,44 @@ wire run = |rate;
 (* ram_init_file = "rtl/tg68k/m68k_ea_idx.mif"  *) reg [4:0] ea_rom[2048];
 
 reg [15:0] opc_l;
+reg [15:0] snd_l;
 reg  [2:0] st;
 always @(posedge clk) begin
 	if (~reset) st <= 0;
 	else begin
 		st <= {st[1:0], opc_start & cpu_ena & run};
 		if (opc_start & cpu_ena) opc_l <= opc;
+		if (st[0]) snd_l <= opc_snd;
 	end
 end
+
+// Two instructions take a number from the word after the opcode, so no ROM
+// indexed by the opcode can hold their time. MOVEM takes the register list,
+// and a long divide takes the bit that makes it signed. Both are read out of
+// snd_l, which the kernel has settled by the time st[0] samples it.
+//
+// 11.6.7: MOVEM EA,RL is 8+4n clocks and MOVEM RL,EA is 4+2n, both head 2 and
+// tail 0, with the calculate-immediate-address time on top - always the word
+// row, because the register list is one word whatever the transfer size. The
+// table's two footnotes print those formulas under swapped labels; the
+// (r/p/w) column settles which is which, the 8+4n row being the one that does
+// n reads and so the one that loads registers.
+wire movem = (opc_l[15:12] == 4'h4) & opc_l[11] & ~opc_l[9] & ~opc_l[8]
+           & opc_l[7] & |opc_l[5:3];
+
+reg [4:0] rn;
+integer i;
+always @* begin
+	rn = 5'd0;
+	for (i = 0; i < 16; i = i + 1) rn = rn + {4'd0, snd_l[i]};
+end
+
+wire  [7:0] mv_cc   = opc_l[10] ? (8'd8 + {1'b0, rn, 2'b00}) : (8'd4 + {2'b00, rn, 1'b0});
+wire [19:0] movem_e = {1'b1, 3'd4, 2'd0, 5'd2, mv_cc, 1'b0};
+
+// 11.6.8 gives DIVU.L 78 clocks and DIVS.L 90, alike in head, tail and
+// address class. The sign is extension word bit 11.
+wire divsl = (opc_l[15:6] == 10'h131) & snd_l[11];
 
 // A register number never changes a time, so the low three bits of the opcode
 // stay out of the index - except under mode 7, where they select the
@@ -77,7 +108,7 @@ reg [5:0] cyc_i;
 reg [4:0] ea_i;
 always @(posedge clk) begin
 	cyc_i <= cyc_rom[cyc_a];
-	ea_i  <= ea_rom[{op_e[18:16], opc_l[7:6], opc_l[5:0]}];
+	ea_i  <= ea_rom[{op_e[18:16], movem ? 2'b01 : opc_l[7:6], opc_l[5:0]}];
 end
 
 reg [19:0] cyc_e;
@@ -87,12 +118,12 @@ reg [15:0] ea_e;
 `include "tg68k/m68k_ea_pal.vh"
 `include "tg68k/m68k_misc_030.vh"
 
-wire [19:0] op_e = misc ? misc_e : cyc_e;
+wire [19:0] op_e = misc ? misc_e : movem ? movem_e : cyc_e;
 
 wire [2:0] eacl  = op_e[18:16];
 wire [1:0] op_t  = op_e[15:14];
 wire [4:0] op_h  = op_e[13:9];
-wire [7:0] op_cc = op_e[8:1];
+wire [7:0] op_cc = op_e[8:1] + (divsl ? 8'd12 : 8'd0);
 
 wire       ea_v  = ea_e[15] & |eacl;
 wire [6:0] ea_cc = ea_v ? ea_e[14:8] : 7'd0;

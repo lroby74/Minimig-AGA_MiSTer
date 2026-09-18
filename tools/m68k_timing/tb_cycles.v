@@ -6,11 +6,13 @@ reg  [1:0] speed = 2'b00;             // 25MHz
 reg [15:0] opc;
 reg        opc_start = 0;
 reg        opc_cond  = 0;
+reg [15:0] snd       = 0;   // the word after the opcode
 wire       hold;
 wire       cpu_ena = ~hold;
 
 cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(ntsc), .ena(ena), .speed(speed),
-                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond), .cpu_ena(cpu_ena), .hold(hold));
+                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond),
+                .opc_snd(snd), .cpu_ena(cpu_ena), .hold(hold));
 
 always #5 clk = ~clk;
 
@@ -29,11 +31,11 @@ task end_run;   begin while (hold) @(negedge clk); t1 = $time; end endtask
 
 function real clocks; input integer dt; clocks = (dt/10.0) * RATE / 4096.0; endfunction
 
-task report(input [30*8:1] name, input real expect);
+task report(input [38*8:1] name, input real expect);
 	real got;
 begin
 	got = clocks(t1 - t0) / n;
-	$display("%-34s %7.3f clocks/instr   tables %6.2f   %s",
+	$display("%-38s %7.3f clocks/instr   tables %6.2f   %s",
 	         name, got, expect, (got > expect-0.05 && got < expect+0.05) ? "OK" : "MISMATCH");
 end
 endtask
@@ -95,6 +97,32 @@ initial begin
 	opc_cond = 0;
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'h6600); n=n+1; end end_run;
 	report("Bcc.W (6 either way)", 6.0);
+
+	// MOVEM takes its register count from the word after the opcode, so the
+	// ROM cannot hold its time and the model counts the mask instead.
+	// MOVEM.L D0-D7/A0-A6,-(A7): fifteen registers, 4+2n = 34, and the
+	// calculate-immediate-address time for -(An) is 2 with head 2, which the
+	// operation's own head is added to - 36, and tail 0 leaves the next one
+	// nothing to absorb.
+	snd = 16'hFFFE;
+	start_run; for (i=0;i<200;i=i+1) begin issue(16'h48E7); n=n+1; end end_run;
+	report("MOVEM.L D0-D7/A0-A6,-(A7)  15 regs", 36.0);
+
+	// the other direction is 8+4n, and (An)+ costs 4: 68 + 4
+	snd = 16'h7FFF;
+	start_run; for (i=0;i<200;i=i+1) begin issue(16'h4CDF); n=n+1; end end_run;
+	report("MOVEM.L (A7)+,D0-D7/A0-A6  15 regs", 72.0);
+
+	// and a short one, to show n is read and not assumed: 4+2*2 = 8, (An) is 2
+	snd = 16'h0003;
+	start_run; for (i=0;i<200;i=i+1) begin issue(16'h4890); n=n+1; end end_run;
+	report("MOVEM.W D0/D1,(A0)  2 regs", 10.0);
+
+	// the sign of a long divide is in that same word, bit 11: 78 becomes 90
+	snd = 16'h0800;
+	start_run; for (i=0;i<100;i=i+1) begin issue(16'h4C41); n=n+1; end end_run;
+	report("DIVS.L D1,D0", 90.0);
+	snd = 16'h0000;
 
 	speed = 2'b10; RATE = 1804.0;       // 50MHz
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E71); n=n+1; end end_run;

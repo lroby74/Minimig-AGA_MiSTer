@@ -10,19 +10,21 @@ module tb_trace;
 reg clk = 0, reset = 0;
 reg [15:0] opc;
 reg        opc_cond = 0, opc_start = 0;
+reg [15:0] opc_snd = 0;
 wire       hold;
 wire       cpu_ena = ~hold;
 
 cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(1'b0), .ena(1'b1), .speed(2'b00),
-                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond),
+                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond), .opc_snd(opc_snd),
                 .cpu_ena(cpu_ena), .hold(hold));
 
 always #5 clk = ~clk;
 
 integer fd, r, n, t0, t1, i;
-integer o, c;
+integer o, c, e;
 reg [31:0] ops [0:100000];
 reg [31:0] cnd [0:100000];
+reg [31:0] snd [0:100000];
 
 initial begin
 	$readmemh("m68k_cyc_idx.hex", dut.cyc_rom);
@@ -31,10 +33,10 @@ initial begin
 	fd = $fopen("trace.txt", "r");
 	if (!fd) begin $display("no trace.txt"); $finish; end
 	n = 0;
-	r = $fscanf(fd, "%d %d\n", o, c);
-	while (r == 2) begin
-		ops[n] = o; cnd[n] = c; n = n + 1;
-		r = $fscanf(fd, "%d %d\n", o, c);
+	r = $fscanf(fd, "%d %d %d\n", o, c, e);
+	while (r == 3) begin
+		ops[n] = o; cnd[n] = c; snd[n] = e; n = n + 1;
+		r = $fscanf(fd, "%d %d %d\n", o, c, e);
 	end
 	$fclose(fd);
 
@@ -43,7 +45,7 @@ initial begin
 	t0 = $time;
 	for (i = 0; i < n; i = i + 1) begin
 		while (hold) @(negedge clk);
-		opc = ops[i][15:0]; opc_cond = cnd[i][0];
+		opc = ops[i][15:0]; opc_cond = cnd[i][0]; opc_snd = snd[i][15:0];
 		opc_start = 1; @(negedge clk); opc_start = 0;
 	end
 	while (hold) @(negedge clk);
