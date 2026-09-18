@@ -34,6 +34,7 @@ module cpu_wrapper
 	input             ph2,
 
 	input       [4:0] cpucfg,
+	input             ntsc,
 	input       [2:0] fastramcfg,
 	input       [2:0] cachecfg,
 	input             bootrom,
@@ -208,6 +209,8 @@ wire        uds_p;
 wire        lds_p;
 wire        reset_out_p;
 wire        longword;
+wire        opc_start;
+wire [15:0] opc_out;
 
 TG68KdotC_Kernel
 #(
@@ -236,7 +239,9 @@ cpu_inst_p
   .longword(longword),
   
   .cpu({cpucfg[1], cpucfg[1] | cpucfg[0]}),   // 68030 (10) uses the 68020 (11) feature set
-  .cpu030(cpucfg[1:0] == 2'b10),
+  .cpu030(cpu030),
+  .opc_start(opc_start),
+  .opc_out(opc_out),
   .busstate(cpustate_p),		// 0: fetch code, 1: no memaccess, 2: read data, 3: write data
   .cacr_out(cacr_p),
   .d_cache_out(dcache_sw_en_p),
@@ -317,31 +322,22 @@ always @(posedge clk) begin
 	else if (stock_speed & clkena_p_base)      cooldown <= 4'd4;
 end
 
-// 68030 speed: one clkena every D sysclk, D = 4096/rate. The unthrottled pipeline
-// measures 4.8x an A1200 68EC020 and is linear in D (#233), so D = 68.14/MHz.
-reg [11:0] rate;
-always @* case({cpu030, cpucfg[4:3]})
-	3'b100:  rate = 12'd1503; // 25MHz -> D 2.725
-	3'b101:  rate = 12'd2404; // 40MHz -> D 1.704
-	3'b110:  rate = 12'd3005; // 50MHz -> D 1.363
-	default: rate = 12'd0;    // unthrottled
-endcase
+wire cyc_hold;
+cpu_cycles cycles
+(
+	.clk(clk),
+	.reset(reset),
+	.ntsc(ntsc),
+	.ena(cpu030),
+	.speed(cpucfg[4:3]),
+	.opc_start(opc_start),
+	.opc(opc_out),
+	.cpu_ena(clkena_p_throttled),
+	.hold(cyc_hold)
+);
 
-reg [12:0] acc;
-reg        credit;
-always @(posedge clk) begin
-	if (~reset) begin
-		acc    <= 0;
-		credit <= 1;
-	end
-	else begin
-		acc <= {1'b0, acc[11:0]} + rate;
-		if (acc[12])                 credit <= 1;
-		else if (clkena_p_throttled) credit <= 0;
-	end
-end
+wire clkena_p_throttled = clkena_p_base & (cooldown == 4'd0) & ~cyc_hold;
 
-wire clkena_p_throttled = clkena_p_base & (cooldown == 4'd0) & (credit | ~|rate);
 
 reg       chipreq;
 reg [2:0] cpu_ipl;

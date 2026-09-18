@@ -370,6 +370,7 @@ cpu_wrapper cpu_wrapper
 	.fastchip_lw     (fastchip_lw     ),
 
 	.cpucfg       (cpucfg          ),
+	.ntsc         (ntsc            ),
 	.cachecfg     (cachecfg        ),
 	.fastramcfg   (memcfg[6:4]     ),
 	.bootrom      (bootrom         ),

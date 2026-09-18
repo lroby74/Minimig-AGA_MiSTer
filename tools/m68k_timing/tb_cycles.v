@@ -1,0 +1,79 @@
+`timescale 1ns/1ns
+module tb_cycles;
+
+reg clk = 0, reset = 0, ntsc = 0, ena = 1;
+reg  [1:0] speed = 2'b00;             // 25MHz
+reg [15:0] opc;
+reg        opc_start = 0;
+wire       hold;
+wire       cpu_ena = ~hold;
+
+cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(ntsc), .ena(ena), .speed(speed),
+                .opc_start(opc_start), .opc(opc), .cpu_ena(cpu_ena), .hold(hold));
+
+always #5 clk = ~clk;
+
+integer t0, t1, n;
+real RATE; initial RATE = 902.0;
+
+task issue(input [15:0] o);
+begin
+	while (hold) @(negedge clk);
+	opc = o; opc_start = 1; @(negedge clk); opc_start = 0;
+end
+endtask
+
+task start_run; begin while (hold) @(negedge clk); t0 = $time; n = 0; end endtask
+task end_run;   begin while (hold) @(negedge clk); t1 = $time; end endtask
+
+function real clocks; input integer dt; clocks = (dt/10.0) * RATE / 4096.0; endfunction
+
+task report(input [30*8:1] name, input real expect);
+	real got;
+begin
+	got = clocks(t1 - t0) / n;
+	$display("%-34s %7.3f clocks/instr   tables %6.2f   %s",
+	         name, got, expect, (got > expect-0.05 && got < expect+0.05) ? "OK" : "MISMATCH");
+end
+endtask
+
+integer i;
+initial begin
+	$readmemh("m68k_cyc_idx.hex", dut.cyc_rom);
+	$readmemh("m68k_ea_idx.hex",  dut.ea_rom);
+	repeat (4) @(negedge clk); reset = 1; repeat (8) @(negedge clk);
+
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E71); n=n+1; end end_run;
+	report("NOP", 2.0);
+
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'hD289); n=n+1; end end_run;
+	report("ADD.L A1,D1", 2.0);
+
+	start_run; for (i=0;i<200;i=i+1) begin issue(16'hC1C1); n=n+1; end end_run;
+	report("MULS.W D1,D0", 28.0);
+
+	start_run; for (i=0;i<100;i=i+1) begin issue(16'h4C41); n=n+1; end end_run;
+	report("DIVU.L D1,D0", 78.0);
+
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'hD090); n=n+1; end end_run;
+	report("ADD.L (A0),D0  (2 + fea 3)", 5.0);
+
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E75); n=n+1; end end_run;
+	report("RTS", 9.0);
+
+	// the overlap: MOVE.L D0,(A0) has tail 1, ADD.L A1,D1 has head 2, so the
+	// pair costs 3 + [2 - min(2,1)] = 4, not 5.  Equation 11-1 at work.
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h2080); issue(16'hD289); n=n+2; end end_run;
+	report("MOVE.L D0,(A0) ; ADD.L A1,D1", 2.0);
+
+	// same two without the overlap, each after a zero-tail instruction
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'hD289); issue(16'hD289); n=n+2; end end_run;
+	report("ADD.L A1,D1 x2 (no tail)", 2.0);
+
+	speed = 2'b10; RATE = 1804.0;       // 50MHz
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E71); n=n+1; end end_run;
+	report("NOP at 50MHz", 2.0);
+
+	$finish;
+end
+endmodule

@@ -140,7 +140,9 @@ entity TG68KdotC_Kernel is
 		regin_out				: out std_logic_vector(31 downto 0);
 		CACR_out					: out std_logic_vector( 3 downto 0);
 		D_CACHE_out				: out std_logic;
-		VBR_out					: out std_logic_vector(31 downto 0)
+		VBR_out					: out std_logic_vector(31 downto 0);
+		opc_start				: out std_logic;                      -- 1 for one clkena as an opcode starts
+		opc_out					: out std_logic_vector(15 downto 0)   -- the opcode starting
 		);
 end TG68KdotC_Kernel;
 
@@ -4078,6 +4080,10 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
   CACR_out <= (CACR(3) or cclr(4)) & CACR(2 downto 0);
   D_CACHE_out <= CACR_DC or not CACR_DC_owned;
   VBR_out <= VBR;
+  -- decodeOPC is setopcode delayed by one clkena, and opcode is loaded in
+  -- that same clkena, so the two line up on the instruction being started.
+  opc_start <= '1' when decodeOPC = '1' else '0';
+  opc_out   <= opcode;
 -----------------------------------------------------------------------------
 -- Conditions
 -----------------------------------------------------------------------------

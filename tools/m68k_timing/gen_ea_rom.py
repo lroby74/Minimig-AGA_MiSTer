@@ -16,7 +16,8 @@ Indexed by {ea_class[2:0], size[1:0], mode[2:0], reg[2:0]} - 2048 entries.
 Size is opcode[7:6] and only matters for the immediate forms, where the table
 gives .B/.W and .L their own rows.
 
-Entry, 16 bits:  [15] valid  [14:8] cc  [7:3] head  [2:1] tail  [0] spare
+Entry, 16 bits:  [15] valid  [14:8] cc  [7:3] head  [2:1] tail  [0] head takes
+the operation's head as well - the manual's 'X + op head' notation
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -55,17 +56,18 @@ SIZE_SUFFIX = {0: '.B', 1: '.W', 2: '.L'}
 # address calculation and takes in the operation's head as well (11.5), which
 # the RTL adds on top; the number here is X.
 CEA = {
-    (0, 0): (0, 0, 0),   # Dn  - marked %, no cycles
-    (1, 0): (0, 0, 0),   # An  - marked %, no cycles
-    (2, 0): (2, 2, 0),   # (An)              2 + op head
-    (3, 0): (2, 0, 0),   # (An)+             0
-    (4, 0): (2, 2, 0),   # -(An)             2 + op head
-    (5, 0): (2, 2, 0),   # (d16,An)          2 + op head
-    (6, 0): (4, 4, 0),   # (d8,An,Xn) brief  4 + op head
-    (7, 0): (2, 2, 0),   # (xxx).W           2 + op head
-    (7, 1): (4, 4, 0),   # (xxx).L           4 + op head
-    (7, 2): (2, 2, 0),   # (d16,PC)          2 + op head
-    (7, 3): (4, 4, 0),   # (d8,PC,Xn) brief  4 + op head
+# (cc, head, tail, head_takes_op_head)
+    (0, 0): (0, 0, 0, 0),   # Dn  - marked %, no cycles
+    (1, 0): (0, 0, 0, 0),   # An  - marked %, no cycles
+    (2, 0): (2, 2, 0, 1),   # (An)              2 + op head
+    (3, 0): (2, 0, 0, 0),   # (An)+             0
+    (4, 0): (2, 2, 0, 1),   # -(An)             2 + op head
+    (5, 0): (2, 2, 0, 1),   # (d16,An)          2 + op head
+    (6, 0): (4, 4, 0, 1),   # (d8,An,Xn) brief  4 + op head
+    (7, 0): (2, 2, 0, 1),   # (xxx).W           2 + op head
+    (7, 1): (4, 4, 0, 1),   # (xxx).L           4 + op head
+    (7, 2): (2, 2, 0, 1),   # (d16,PC)          2 + op head
+    (7, 3): (4, 4, 0, 1),   # (d8,PC,Xn) brief  4 + op head
 }
 
 
@@ -73,10 +75,10 @@ CEA = {
 # from the page. Only the modes JMP and JSR accept appear here; the rest of
 # the table runs onto the following page and is not yet transcribed.
 JEA = {
-    (7, 0): (2, 2, 0),   # (xxx).W            2 + op head
-    (7, 1): (2, 2, 0),   # (xxx).L            2 + op head
-    (6, 0): (6, 6, 0),   # (d8,An,Xn) brief   6 + op head
-    (7, 3): (6, 6, 0),   # (d8,PC,Xn) brief   6 + op head
+    (7, 0): (2, 2, 0, 1),   # (xxx).W            2 + op head
+    (7, 1): (2, 2, 0, 1),   # (xxx).L            2 + op head
+    (6, 0): (6, 6, 0, 1),   # (d8,An,Xn) brief   6 + op head
+    (7, 3): (6, 6, 0, 1),   # (d8,PC,Xn) brief   6 + op head
 }
 
 
@@ -118,16 +120,16 @@ def build(cpu):
             v = JEA.get((mode, reg if mode == 7 else 0))
             if v is None:
                 continue
-            cc, head, tail = v
-            entries[idx] = (1 << 15) | (cc << 8) | (head << 3) | (tail << 1)
+            cc, head, tail, plus = v
+            entries[idx] = (1 << 15) | (cc << 8) | (head << 3) | (tail << 1) | plus
             hit += 1
             continue
         if section == 'cea':
             v = CEA.get((mode, reg if mode == 7 else 0))
             if v is None:
                 continue
-            cc, head, tail = v
-            entries[idx] = (1 << 15) | (min(cc, 127) << 8) | (min(head, 31) << 3) | (tail << 1)
+            cc, head, tail, plus = v
+            entries[idx] = (1 << 15) | (min(cc, 127) << 8) | (min(head, 31) << 3) | (tail << 1) | plus
             hit += 1
             continue
         lbl = ea_label(section, size, mode, reg)
@@ -157,4 +159,10 @@ if __name__ == '__main__':
           f'{st["miss"]} with no matching row', file=sys.stderr)
     for k, v in sorted(st['missing'].items(), key=lambda x: -x[1])[:20]:
         print(f'    missing {k[0]}/{k[1]!r} ({v})', file=sys.stderr)
-    sys.stdout.write(mif(e, 16))
+    from gen_cycle_rom import hexdump, emit_palette
+    if '--split' in sys.argv:
+        w, n = emit_palette(e, 16, '../../rtl/tg68k/m68k_ea', 'ea_i', 'ea_e',
+                            'effective address timing, indexed by m68k_ea_idx.mif')
+        print(f'{cpu} ea: {n} distinct entries, index {w} bits', file=sys.stderr)
+        sys.exit(0)
+    sys.stdout.write(hexdump(e, 4) if '--hex' in sys.argv else mif(e, 16))

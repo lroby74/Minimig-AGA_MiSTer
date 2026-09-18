@@ -1,0 +1,150 @@
+//--------------------------------------------------------------------------//
+// Per-instruction cycle cost for the 68030 mode.                           //
+//                                                                          //
+// The 68030 manual gives each instruction a head, a tail and an            //
+// instruction-cache-case time, and composes a stream of them (11-1):       //
+//                                                                          //
+//     CC1 + [CC2 - min(H2,T1)] + [CC3 - min(H3,T2)] + ...                  //
+//                                                                          //
+// so what an instruction costs depends on the one before it, and no scalar //
+// clock divider can express that. An instruction taking an effective       //
+// address composes the two the same way (11-2):                            //
+//                                                                          //
+//     CCea + [CCop - min(Hop,Tea)]                                         //
+//                                                                          //
+// The two ROMs are built by tools/m68k_timing straight from the tables in  //
+// section 11 of the manual. An entry with its valid bit clear has no table //
+// row behind it and is charged the architectural minimum of two clocks     //
+// rather than a made-up number.                                            //
+//--------------------------------------------------------------------------//
+
+module cpu_cycles
+(
+	input             clk,
+	input             reset,
+
+	input             ntsc,
+	input             ena,          // 68030 mode with a clock target selected
+	input       [1:0] speed,        // 00 25MHz, 01 40MHz, 10 50MHz, 11 unthrottled
+
+	input             opc_start,    // one clkena as an instruction begins
+	input      [15:0] opc,
+	input             cpu_ena,      // the enable the CPU is actually getting
+
+	output            hold          // hold the CPU: it has not paid for the last one
+);
+
+// rate/4096 CPU clocks are earned per sysclk, so rate is 4096*f_cpu/f_sys,
+// f_sys being 113.5006MHz on PAL and 114.5454MHz on NTSC.
+reg [11:0] rate;
+always @* case({ena, speed})
+	3'b100:  rate = ntsc ? 12'd894  : 12'd902;
+	3'b101:  rate = ntsc ? 12'd1430 : 12'd1444;
+	3'b110:  rate = ntsc ? 12'd1788 : 12'd1804;
+	default: rate = 12'd0;
+endcase
+
+wire run = |rate;
+
+// The tables repeat: a 68030 has only sixty distinct (cc, head, tail, ea
+// class) combinations across every opcode form, and twenty for the effective
+// addresses. So the memories hold an index into those and the entries live in
+// logic - 11 M10K rather than 36 for the raw images.
+(* ram_init_file = "rtl/tg68k/m68k_cyc_idx.mif" *) reg [5:0] cyc_rom[16384];
+(* ram_init_file = "rtl/tg68k/m68k_ea_idx.mif"  *) reg [4:0] ea_rom[2048];
+
+reg [15:0] opc_l;
+reg  [2:0] st;
+always @(posedge clk) begin
+	if (~reset) st <= 0;
+	else begin
+		st <= {st[1:0], opc_start & cpu_ena & run};
+		if (opc_start & cpu_ena) opc_l <= opc;
+	end
+end
+
+// A register number never changes a time, so the low three bits of the opcode
+// stay out of the index - except under mode 7, where they select the
+// addressing mode and sometimes the instruction, so mode 7 gets its own half.
+wire [13:0] cyc_a = (opc_l[5:3] == 3'b111) ? {opc_l[15:6], 1'b1, opc_l[2:0]}
+                                           : {opc_l[15:6], 1'b0, opc_l[5:3]};
+
+// 4E70-4E77 is the one group that needs opcode[2:0] without being mode 7.
+wire misc = (opc_l[15:3] == 13'h09CE);
+
+reg [5:0] cyc_i;
+reg [4:0] ea_i;
+always @(posedge clk) begin
+	cyc_i <= cyc_rom[cyc_a];
+	ea_i  <= ea_rom[{op_e[18:16], opc_l[7:6], opc_l[5:0]}];
+end
+
+reg [19:0] cyc_e;
+reg [19:0] misc_e;
+reg [15:0] ea_e;
+`include "tg68k/m68k_cyc_pal.vh"
+`include "tg68k/m68k_ea_pal.vh"
+`include "tg68k/m68k_misc_030.vh"
+
+wire [19:0] op_e = misc ? misc_e : cyc_e;
+
+wire [2:0] eacl  = op_e[18:16];
+wire [1:0] op_t  = op_e[15:14];
+wire [4:0] op_h  = op_e[13:9];
+wire [7:0] op_cc = op_e[8:1];
+
+wire       ea_v  = ea_e[15] & |eacl;
+wire [6:0] ea_cc = ea_v ? ea_e[14:8] : 7'd0;
+wire [4:0] ea_h  = ea_v ? ea_e[7:3]  : 5'd0;
+wire [1:0] ea_t  = ea_v ? ea_e[2:1]  : 2'd0;
+wire       ea_ph = ea_v & ea_e[0];
+wire       model = op_e[19] & (~|eacl | ea_e[15]);
+
+wire [4:0] ov1  = (op_h < {3'b0, ea_t}) ? op_h : {3'b0, ea_t};
+wire [8:0] cc   = {1'b0, op_cc} + {2'b0, ea_cc} - {4'b0, ov1};
+wire [5:0] head = ea_v ? ({1'b0, ea_h} + (ea_ph ? {1'b0, op_h} : 6'd0)) : {1'b0, op_h};
+wire [5:0] ov2  = (head < {4'b0, prev_t}) ? head : {4'b0, prev_t};
+// After the overlap an instruction can cost less than two clocks, and the
+// manual says outright that a net of zero is possible, so nothing is clamped
+// here. The two-clock floor is only for a form with no table row behind it.
+wire [8:0] net  = cc - {3'b0, ov2};
+wire [8:0] cost = model ? net : 9'd2;
+
+// The two ROM reads take three clocks and the CPU is held through them, so
+// those clocks would land on top of every instruction. They do not: whatever
+// the accumulator earns while a lookup is in flight is banked in cred and
+// comes off the charge at the end of it, so over a stream the lookup costs
+// nothing and an instruction costs what the tables say.
+reg [12:0] acc;
+reg  [8:0] debt;
+reg  [1:0] cred;
+reg  [1:0] prev_t;
+wire       spend = acc[12];
+wire [8:0] pay   = {7'd0, cred} + {8'd0, spend};
+always @(posedge clk) begin
+	if (~reset) begin
+		acc    <= 0;
+		debt   <= 0;
+		cred   <= 0;
+		prev_t <= 0;
+	end
+	else begin
+		acc <= {1'b0, acc[11:0]} + rate;
+		if (st[2]) begin
+			debt   <= (cost > pay) ? cost[8:0] - pay : 9'd0;
+			cred   <= 0;
+			prev_t <= model ? op_t : 2'd0;
+		end
+		else if (|st) begin
+			if (spend & ~&cred) cred <= cred + 1'd1;
+		end
+		else begin
+			cred <= 0;
+			if (spend & |debt) debt <= debt - 1'd1;
+		end
+	end
+end
+
+assign hold = run & (|debt | |st);
+
+endmodule

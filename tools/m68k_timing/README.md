@@ -119,3 +119,64 @@ and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 * **Bcc** is charged as taken. Not-taken byte branches are 2 clocks less, and
   whether a branch is taken is not something the ROM can know - the RTL has the
   signal and can correct it.
+
+## In the core
+
+`rtl/cpu_cycles.v` holds the model. `cpu_wrapper` instantiates it and lets it
+gate the CPU's clock enable:
+
+    hold = a lookup is in flight, or this instruction has not been paid for
+
+The RTL charges `cc - min(head, tail_of_previous)` clocks per instruction,
+which is equation 11-1, and composes the address with the operation by
+equation 11-2 before that. Nothing is clamped on the way: after the overlap an
+instruction can cost less than two clocks, and the manual says outright that a
+net of zero is possible. The two-clock floor applies only to a form with no
+table row behind it.
+
+The two ROM reads take three clocks and the CPU is held through them. Those
+clocks do not land on top of the instruction: what the rate accumulator earns
+during the hold is banked and comes off the charge at the end of it, so over a
+stream the lookup is free.
+
+### Memory
+
+The tables repeat heavily - across all 16384 opcode slots there are only **60**
+distinct (cc, head, tail, ea class) combinations, and 20 for the effective
+addresses. So the memories hold a 6-bit and a 5-bit index and the entries sit
+in logic:
+
+| | raw | as index + palette |
+|---|---|---|
+| instruction | 16384 x 20 = 32 M10K | 16384 x 6 = **10 M10K** |
+| effective address | 2048 x 16 = 4 M10K | 2048 x 5 = **1 M10K** |
+
+11 M10K out of the 553 on the DE10-Nano's Cyclone V, plus about eighty logic
+cells for the palettes and the arithmetic.
+
+### Checking it
+
+    sh run_tb.sh
+
+Regenerates the images, builds `cpu_cycles` with them, runs a stream of each
+instruction form through it and compares the clocks it charges against the
+manual. Every case has to come back OK:
+
+    NOP                                  1.999   tables   2.00   OK
+    MULS.W D1,D0                        28.000   tables  28.00   OK
+    DIVU.L D1,D0                        78.000   tables  78.00   OK
+    ADD.L (A0),D0  (2 + fea 3)           5.000   tables   5.00   OK
+    RTS                                  9.000   tables   9.00   OK
+    MOVE.L D0,(A0) ; ADD.L A1,D1         2.000   tables   2.00   OK
+
+The last one is the overlap: MOVE.L D0,(A0) has a tail of 1 and ADD.L A1,D1 a
+head of 2, so the pair costs 3 + [2 - min(2,1)] = 4 rather than 5. Getting that
+wrong shows up as 2.5 clocks each, which is how the two bugs in the first cut
+of this were found.
+
+### A correction to the manual
+
+Section 11.5's first worked example gives `SUBA.L D1,A2` a head of 4 and a
+cache case of 4, and totals the example at 6 clocks. The table in 11.6.8 gives
+`SUBA.L Rn,An` 2/0/2 - the 4 belongs to the `.W` row - so the example totals 4.
+The tables are what this implementation follows.
