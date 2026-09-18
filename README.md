@@ -137,9 +137,19 @@ The cpu config byte from the HPS is `SSPCCCTT`: `TT` the CPU type
 (`00`=68000, `01`=68010, `10`=68030, `11`=68020), `CCC` the cache config, `P` the
 68020 stock-speed throttle, `SS` the 68030 speed above.
 
-**Selecting it needs a firmware change as well.** Main_MiSTer's minimig CPU menu has no
-entry for code `10` - the slot is displayed as `-----` - and no control for the two
-speed bits, so with stock firmware the core cannot be told to be a 68030.
+**Selecting it needs a firmware change as well.** Main_MiSTer's minimig CPU menu shows
+code `10` as `-----`, corrects a config carrying it back to 68020 on load, and masks the
+config byte to six bits so the two speed bits never leave the board. The patch that
+fixes all three is in `extra/main_mister/68030_cpu_menu.patch`:
+
+    git clone https://github.com/MiSTer-devel/Main_MiSTer
+    cd Main_MiSTer
+    git apply .../extra/main_mister/68030_cpu_menu.patch
+    make
+
+The CPU line then cycles through eight settings - 68000, 68010, 68020 Fast, 68020
+~14MHz, and the 68030 at 25, 40, 50 MHz and unthrottled - with nothing else in the menu
+moved.
 
 ### AGA chipset accuracy
 
