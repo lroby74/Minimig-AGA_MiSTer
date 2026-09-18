@@ -140,13 +140,17 @@ The cpu config byte from the HPS is `SSPCCCTT`: `TT` the CPU type
 
 **Selecting it needs a firmware change as well.** Main_MiSTer's minimig CPU menu shows
 code `10` as `-----`, corrects a config carrying it back to 68020 on load, and masks the
-config byte to six bits so the two speed bits never leave the board. The patch that
-fixes all three is in `extra/main_mister/68030_cpu_menu.patch`:
+config byte to six bits so the two speed bits never leave the board. One commit fixes all
+three, and it is in `extra/main_mister/` both as a branch and as a patch file:
 
-    git clone https://github.com/MiSTer-devel/Main_MiSTer
+    git clone https://github.com/lroby74/Main_MiSTer
     cd Main_MiSTer
-    git apply .../extra/main_mister/68030_cpu_menu.patch
+    git checkout claude/model-opus-lrhvk4
     make
+
+It sits directly on upstream's master, so catching up with MiSTer-devel is a
+rebase. `extra/main_mister/README.md` has the recipe and says which three files
+it touches.
 
 The CPU line then cycles through eight settings - 68000, 68010, 68020 Fast, 68020
 ~14MHz, and the 68030 at 25, 40, 50 MHz and unthrottled - with nothing else in the menu
