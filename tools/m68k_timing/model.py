@@ -4,8 +4,9 @@
   python3 model.py trace.txt
 
 The trace is one line per instruction: the opcode, the condition code of the
-instruction before it, and the word after the opcode - opc_cond and opc_snd as
-the RTL sees them. This applies
+instruction before it, the word after the opcode, and whether the instruction
+before it was the iteration a DBcc loop ran out on - opc_cond, opc_snd and
+opc_dbx as the RTL sees them. This applies
 equations 11-1 and 11-2 in plain Python, so it is a second opinion on what
 rtl/cpu_cycles.v should be charging. The two disagreeing means one of them is
 wrong, which is the point.
@@ -55,7 +56,7 @@ def run(trace, cpu='68030'):
     total = 0
     pend = False                      # a byte branch is waiting on its outcome
     detail = []
-    for n, (op, cond, snd) in enumerate(trace):
+    for n, (op, cond, snd, dbx) in enumerate(trace):
         i = unpack_ins(ins[index(op)])
         mv = movem_n(op, snd)
         if mv:
@@ -87,6 +88,8 @@ def run(trace, cpu='68030'):
             cost = 2
         if pend and cond:             # the branch before this one was taken
             cost += 2
+        if dbx:                       # the DBcc before it ran its counter out
+            cost += 4
         pend = model and bcc_b
         total += cost
         prev_tail = i['tail'] if model else 0

@@ -45,6 +45,7 @@ architecture sim of tb_cpi is
 	signal opc_out   : std_logic_vector(15 downto 0);
 	signal opc_cond  : std_logic;
 	signal opc_snd   : std_logic_vector(15 downto 0);
+	signal opc_dbx   : std_logic;
 
 	type ram_t is array (0 to 65535) of std_logic_vector(15 downto 0);
 	shared variable ram : ram_t := (others => x"4E71");
@@ -67,7 +68,7 @@ begin
 			clr_berr => clr_berr, skipFetch => skipf, regin_out => regin,
 			CACR_out => cacr, D_CACHE_out => dcache, VBR_out => vbr,
 			opc_start => opc_start, opc_out => opc_out, opc_cond => opc_cond,
-			opc_snd => opc_snd);
+			opc_snd => opc_snd, opc_dbx => opc_dbx);
 
 	addr_w <= to_integer(unsigned(addr_out(16 downto 1)));
 
@@ -118,6 +119,10 @@ begin
 		variable pend   : boolean := false;
 		variable p_op   : std_logic_vector(15 downto 0);
 		variable p_cond : std_logic;
+		-- whether the instruction before this one was the iteration a DBcc
+		-- loop ran out on, which is what cpu_cycles carries forward too
+		variable p_dbx  : std_logic := '0';
+		variable dbx_v  : std_logic := '0';
 	begin
 		if rising_edge(clk) and nreset = '1' then
 			if TRACE /= "" and not topen then
@@ -131,14 +136,18 @@ begin
 				if p_cond = '1' then write(tl, 1); else write(tl, 0); end if;
 				write(tl, string'(" "));
 				write(tl, to_integer(unsigned(opc_snd)));
+				write(tl, string'(" "));
+				if p_dbx = '1' then write(tl, 1); else write(tl, 0); end if;
 				writeline(tf, tl);
 				pend := false;
 			end if;
+			if opc_dbx = '1' then dbx_v := '1'; end if;
 			if opc_start = '1' then
 				n := n + 1;
 				if topen and n > WARMUP and n < WARMUP + COUNT then
-					p_op := opc_out; p_cond := opc_cond; pend := true;
+					p_op := opc_out; p_cond := opc_cond; p_dbx := dbx_v; pend := true;
 				end if;
+				dbx_v := '0';
 				if n = WARMUP then
 					t0 := cyc; started := true; first := opc_out;
 				elsif started and n = WARMUP + COUNT then

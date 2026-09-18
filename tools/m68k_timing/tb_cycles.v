@@ -7,12 +7,13 @@ reg [15:0] opc;
 reg        opc_start = 0;
 reg        opc_cond  = 0;
 reg [15:0] snd       = 0;   // the word after the opcode
+reg        dbx       = 0;   // a DBcc whose counter has run out
 wire       hold;
 wire       cpu_ena = ~hold;
 
 cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(ntsc), .ena(ena), .speed(speed),
                 .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond),
-                .opc_snd(snd), .cpu_ena(cpu_ena), .hold(hold));
+                .opc_snd(snd), .opc_dbx(dbx), .cpu_ena(cpu_ena), .hold(hold));
 
 always #5 clk = ~clk;
 
@@ -117,6 +118,23 @@ initial begin
 	snd = 16'h0003;
 	start_run; for (i=0;i<200;i=i+1) begin issue(16'h4890); n=n+1; end end_run;
 	report("MOVEM.W D0/D1,(A0)  2 regs", 10.0);
+
+	// DBcc is 6 clocks while the loop runs and 10 on the iteration the counter
+	// runs out on. Which it was is not known when the charge is made, so the 6
+	// is charged and the 4 goes on at the next instruction, the way the two
+	// clocks of a taken byte branch do.
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h51C8); n=n+1; end end_run;
+	report("DBcc looping", 6.0);
+
+	// every iteration expiring is not a real loop, but it is the arithmetic:
+	// each one costs its own 6 plus the 4 the one before it ran out by
+	start_run;
+	for (i=0;i<500;i=i+1) begin
+		issue(16'h51C8); n=n+1;
+		dbx = 1; @(negedge clk); dbx = 0;
+	end
+	end_run;
+	report("DBcc expiring every time", 10.0);
 
 	// the sign of a long divide is in that same word, bit 11: 78 becomes 90
 	snd = 16'h0800;

@@ -31,6 +31,7 @@ module cpu_cycles
 	input      [15:0] opc,
 	input             opc_cond,     // condition of the instruction before it
 	input      [15:0] opc_snd,      // the word after it, settled one clock later
+	input             opc_dbx,      // a DBcc is falling through, its counter spent
 	input             cpu_ena,      // the enable the CPU is actually getting
 
 	output            hold          // hold the CPU: it has not paid for the last one
@@ -151,9 +152,10 @@ wire [5:0] ov2  = (head < {4'b0, prev_t}) ? head : {4'b0, prev_t};
 // here. The two-clock floor is only for a form with no table row behind it.
 wire [8:0] net  = cc - {3'b0, ov2};
 wire [8:0] cost = model ? (bcc_b ? net - 9'd2 : net) : 9'd2;
-// what this instruction owes: its own cost, plus the two clocks a taken byte
-// branch before it turned out to need
-wire [8:0] due  = cost + (bcc_add ? 9'd2 : 9'd0);
+// what this instruction owes: its own cost, plus what the instruction before
+// it turned out to need - two clocks for a taken byte branch, four for the
+// iteration a DBcc loop ran out on
+wire [8:0] due  = cost + (bcc_add ? 9'd2 : 9'd0) + (dbx_add ? 9'd4 : 9'd0);
 
 // The two ROM reads take three clocks and the CPU is held through them, so
 // those clocks would land on top of every instruction. They do not: whatever
@@ -166,6 +168,9 @@ reg  [1:0] cred;
 reg  [1:0] prev_t;
 reg        bcc_pend;
 reg        bcc_add;
+reg        dbx_pend;
+reg        dbx_add;
+reg        dbx_d;
 wire       spend = acc[12];
 wire [8:0] pay   = {7'd0, cred} + {8'd0, spend};
 always @(posedge clk) begin
@@ -176,12 +181,21 @@ always @(posedge clk) begin
 		prev_t   <= 0;
 		bcc_pend <= 0;
 		bcc_add  <= 0;
+		dbx_pend <= 0;
+		dbx_add  <= 0;
+		dbx_d    <= 0;
 	end
 	else begin
 		acc <= {1'b0, acc[11:0]} + rate;
+		// opc_dbx is a decode of the state the CPU is in, so it stays up for as
+		// long as the CPU is stalled there - the edge is what counts, once
+		dbx_d <= opc_dbx;
+		if (opc_dbx & ~dbx_d & run) dbx_pend <= 1'b1;
 		if (opc_start & cpu_ena & run) begin
 			bcc_add  <= bcc_pend & opc_cond;   // the branch before was taken
 			bcc_pend <= 0;
+			dbx_add  <= dbx_pend;
+			dbx_pend <= 0;
 		end
 		if (st[2]) begin
 			debt     <= (due > pay) ? due - pay : 9'd0;
@@ -189,6 +203,7 @@ always @(posedge clk) begin
 			prev_t   <= model ? op_t : 2'd0;
 			bcc_pend <= model & bcc_b;
 			bcc_add  <= 0;
+			dbx_add  <= 0;
 		end
 		else if (|st) begin
 			if (spend & ~&cred) cred <= cred + 1'd1;

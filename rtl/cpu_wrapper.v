@@ -213,6 +213,7 @@ wire        opc_start;
 wire [15:0] opc_out;
 wire        opc_cond;
 wire [15:0] opc_snd;
+wire        opc_dbx;
 
 TG68KdotC_Kernel
 #(
@@ -246,6 +247,7 @@ cpu_inst_p
   .opc_out(opc_out),
   .opc_cond(opc_cond),
   .opc_snd(opc_snd),
+  .opc_dbx(opc_dbx),
   .busstate(cpustate_p),		// 0: fetch code, 1: no memaccess, 2: read data, 3: write data
   .cacr_out(cacr_p),
   .d_cache_out(dcache_sw_en_p),
@@ -338,6 +340,7 @@ cpu_cycles cycles
 	.opc(opc_out),
 	.opc_cond(opc_cond),
 	.opc_snd(opc_snd),
+	.opc_dbx(opc_dbx),
 	.cpu_ena(clkena_p_throttled),
 	.hold(cyc_hold)
 );

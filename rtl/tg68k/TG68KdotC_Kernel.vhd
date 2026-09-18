@@ -144,7 +144,8 @@ entity TG68KdotC_Kernel is
 		opc_start				: out std_logic;                      -- 1 for one clkena as an opcode starts
 		opc_out					: out std_logic_vector(15 downto 0);  -- the opcode starting
 		opc_cond				: out std_logic;                      -- condition of the one before it
-		opc_snd					: out std_logic_vector(15 downto 0)   -- the word after the opcode
+		opc_snd					: out std_logic_vector(15 downto 0);  -- the word after the opcode
+		opc_dbx					: out std_logic                       -- a DBcc whose counter has run out
 		);
 end TG68KdotC_Kernel;
 
@@ -4093,6 +4094,10 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
   -- high in, so it is settled one clock later - which is where the MOVEM
   -- register mask and the signed bit of a long divide are read from.
   opc_snd   <= sndOPC;
+  -- A DBcc loops when the condition is false and the counter has not
+  -- underflowed. The iteration it runs out on falls through instead, and
+  -- 11.6.13 charges that one ten clocks where a looping one costs six.
+  opc_dbx   <= '1' when micro_state = dbcc1 and exe_condition = '0' and c_out(1) = '0' else '0';
 -----------------------------------------------------------------------------
 -- Conditions
 -----------------------------------------------------------------------------

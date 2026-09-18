@@ -97,7 +97,7 @@ The RTL composes the two by equation 11-2:
 
 and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 
-### The two instructions no opcode ROM can hold
+### The three things no opcode ROM can hold
 
 MOVEM's register count and the bit that makes a long divide signed are both in
 the word *after* the opcode, so nothing indexed by the opcode can carry their
@@ -116,6 +116,15 @@ A note on the MOVEM row: the table's two footnotes print the 8+4n and 4+2n
 formulas under swapped labels. The (r/p/w) column settles it - the 8+4n row
 does n reads and no writes, so it is the one that loads registers.
 
+**DBcc** is the third, and it is not in any word of the instruction: 11.6.13
+charges a looping iteration 6 clocks and the one the counter runs out on 10,
+and which it was depends on the count reaching -1. The kernel decides it in
+its `dbcc1` state, where it loops on `exe_condition = '0' and c_out(1) = '1'`,
+so `opc_dbx` says when both the condition is false and the counter is spent.
+The 6 is charged at the DBcc and the 4 goes on at the next instruction, the
+same way the two clocks of a taken byte branch do - neither is known when the
+charge has to be made.
+
 ### Coverage today
 
 | ROM | state |
@@ -133,10 +142,10 @@ coprocessor and MMU space, and encodings TG68K does not implement.
 * **The full-format addressing modes.** The memory-indirect forms of every
   effective-address table are still on the text extraction rather than
   transcribed. TG68K's support for them is partial anyway.
-* **DBcc** is charged 6, the figure for a loop still running. The iteration it
-  expires on costs 10. Which one it was is not in the opcode or the extension
-  word - it depends on the counter reaching -1 - so it would need another
-  signal out of the kernel. Four clocks once per loop.
+* Nothing else from section 11 is knowingly wrong. What is left is the
+  coverage gap above: opcodes `decode.py` does not map, which are the
+  coprocessor and MMU space and encodings TG68K does not implement, and the
+  full-format addressing modes in the first bullet.
 
 ## In the core
 
@@ -182,6 +191,8 @@ manual. Every case has to come back OK:
 
     NOP                                  1.999   tables   2.00   OK
     MOVEM.L D0-D7/A0-A6,-(A7) 15 regs   36.001   tables  36.00   OK
+    DBcc looping                         6.000   tables   6.00   OK
+    DBcc expiring every time             9.992   tables  10.00   OK
     DIVS.L D1,D0                        90.000   tables  90.00   OK
     MULS.W D1,D0                        28.000   tables  28.00   OK
     DIVU.L D1,D0                        78.000   tables  78.00   OK

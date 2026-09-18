@@ -11,20 +11,22 @@ reg clk = 0, reset = 0;
 reg [15:0] opc;
 reg        opc_cond = 0, opc_start = 0;
 reg [15:0] opc_snd = 0;
+reg        opc_dbx = 0;
 wire       hold;
 wire       cpu_ena = ~hold;
 
 cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(1'b0), .ena(1'b1), .speed(2'b00),
-                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond), .opc_snd(opc_snd),
+                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond), .opc_snd(opc_snd), .opc_dbx(opc_dbx),
                 .cpu_ena(cpu_ena), .hold(hold));
 
 always #5 clk = ~clk;
 
 integer fd, r, n, t0, t1, i;
-integer o, c, e;
+integer o, c, e, x;
 reg [31:0] ops [0:100000];
 reg [31:0] cnd [0:100000];
 reg [31:0] snd [0:100000];
+reg [31:0] dbx [0:100000];
 
 initial begin
 	$readmemh("m68k_cyc_idx.hex", dut.cyc_rom);
@@ -33,10 +35,10 @@ initial begin
 	fd = $fopen("trace.txt", "r");
 	if (!fd) begin $display("no trace.txt"); $finish; end
 	n = 0;
-	r = $fscanf(fd, "%d %d %d\n", o, c, e);
-	while (r == 3) begin
-		ops[n] = o; cnd[n] = c; snd[n] = e; n = n + 1;
-		r = $fscanf(fd, "%d %d %d\n", o, c, e);
+	r = $fscanf(fd, "%d %d %d %d\n", o, c, e, x);
+	while (r == 4) begin
+		ops[n] = o; cnd[n] = c; snd[n] = e; dbx[n] = x; n = n + 1;
+		r = $fscanf(fd, "%d %d %d %d\n", o, c, e, x);
 	end
 	$fclose(fd);
 
@@ -47,6 +49,10 @@ initial begin
 		while (hold) @(negedge clk);
 		opc = ops[i][15:0]; opc_cond = cnd[i][0]; opc_snd = snd[i][15:0];
 		opc_start = 1; @(negedge clk); opc_start = 0;
+		// the DBcc flag belongs to the instruction after this one, and the
+		// model is still holding the CPU here, so raising it costs no time
+		opc_dbx = (i+1 < n) ? dbx[i+1][0] : 1'b0;
+		@(negedge clk); opc_dbx = 0;
 	end
 	while (hold) @(negedge clk);
 	t1 = $time;

@@ -26,4 +26,8 @@ other:
 	and.l	#$FF,d4
 	movem.l	(a7)+,d0-d3/a0-a2
 	divs.l	d3,d5
+	moveq	#3,d6
+inner:
+	addq.l	#1,d5
+	dbra	d6,inner
 	bra.w	loop
