@@ -98,15 +98,17 @@ and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 | ROM | state |
 |---|---|
 | 68030 instructions | 7601 of 8192 slots on a table row (92.8%), no unresolved rows |
-| 68030 effective addresses | fea and the transcribed cea and jea rows resolve; ciea and part of jea still open |
+| 68030 effective addresses | every row resolves - no gaps |
 | 68020 instructions | 58%: the 68020 manual names the same forms differently and its MOVE table is a matrix |
 
 ### What is still open
 
-* **ciea, and the rest of jea.** The five effective-address tables are laid out
-  in the PDF in a way the text extraction interleaves wrongly. cea and the
-  first page of jea are transcribed from the page images into `gen_ea_rom.py`
-  with the page cited; ciea and jea's continuation need the same treatment.
+* **The rest of jea.** The five effective-address tables are laid out in the
+  PDF in a way the text extraction interleaves wrongly. cea (page 11-31), ciea
+  (11-33) and the first page of jea (11-35) are transcribed from the page
+  images into `gen_ea_rom.py` with the page cited. jea's continuation, which
+  holds the modes JMP and JSR take beyond the absolute and brief-format ones,
+  is the last piece still reading from the text extraction.
 * **The 68020 label aliases.** Its tables call the same form by another name -
   `ADD Rn,Dn` is `ADD EA,Dn` there, `MULU.W` is `MUL.W`, `TST Dn`/`TST Mem` is
   one `TST EA` row, the shifts are spelled out per direction. A per-CPU alias
@@ -116,9 +118,8 @@ and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 * **MOVEM** costs 4+2n clocks with n in the extension word, and **DIVS.L vs
   DIVU.L** is decided by the extension word too. Neither is in the ROM index.
   MOVEM is left to the fallback; a signed long divide is charged 12 clocks light.
-* **Bcc** is charged as taken. Not-taken byte branches are 2 clocks less, and
-  whether a branch is taken is not something the ROM can know - the RTL has the
-  signal and can correct it.
+* **DBcc** is charged 6, the figure for a loop still running. The clock it
+  expires on costs 10.
 
 ## In the core
 

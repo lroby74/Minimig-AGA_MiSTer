@@ -71,6 +71,12 @@ initial begin
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'hD289); issue(16'hD289); n=n+2; end end_run;
 	report("ADD.L A1,D1 x2 (no tail)", 2.0);
 
+	// ADDI.L #x,(A0): the operation is 3/0/1 and the immediate fetch with an
+	// (An) destination is 4/1/0, so composed it is 7 with head 1 and tail 1,
+	// and back to back each one absorbs 1 of the previous tail: 6 apiece.
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h0690); n=n+1; end end_run;
+	report("ADDI.L #x,(A0)  (3 + fiea 4)", 6.0);
+
 	// Bcc.B: 4 clocks when not taken, 6 when taken. opc_cond carries the
 	// outcome of the instruction before, so it is set for the taken case.
 	opc_cond = 0;

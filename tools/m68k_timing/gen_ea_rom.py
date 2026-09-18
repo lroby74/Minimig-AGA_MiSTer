@@ -82,6 +82,24 @@ JEA = {
 }
 
 
+# 11.6.4 Calculate Immediate Effective Address (ciea), page 11-33, transcribed
+# from the page for the same reason as cea. Keyed by (mode, reg, long), value
+# is (cc, head, tail, head_takes_op_head). A byte immediate still occupies a
+# word, so it reads the .W row.
+CIEA = {
+    (0, 0, 0): (2, 2, 0, 1), (0, 0, 1): (4, 4, 0, 1),   # Dn
+    (2, 0, 0): (2, 2, 0, 1), (2, 0, 1): (4, 4, 0, 1),   # (An)
+    (3, 0, 0): (4, 2, 0, 0), (3, 0, 1): (6, 4, 0, 0),   # (An)+   plain head
+    (4, 0, 0): (2, 2, 0, 1), (4, 0, 1): (4, 4, 0, 1),   # -(An)
+    (5, 0, 0): (4, 4, 0, 1), (5, 0, 1): (6, 6, 0, 1),   # (d16,An)
+    (6, 0, 0): (6, 6, 0, 1), (6, 0, 1): (8, 8, 0, 1),   # (d8,An,Xn) brief
+    (7, 0, 0): (4, 4, 0, 1), (7, 0, 1): (6, 6, 0, 1),   # $XXX.W
+    (7, 1, 0): (6, 6, 0, 1), (7, 1, 1): (8, 8, 0, 1),   # $XXX.L
+    (7, 2, 0): (4, 4, 0, 1), (7, 2, 1): (6, 6, 0, 1),   # (d16,PC)
+    (7, 3, 0): (6, 6, 0, 1), (7, 3, 1): (8, 8, 0, 1),   # (d8,PC,Xn) brief
+}
+
+
 def ea_label(section, size, mode, reg):
     """The table row for one addressing mode, or None when there is no row."""
     if mode in (0, 1):
@@ -94,7 +112,9 @@ def ea_label(section, size, mode, reg):
         dest = MODE_LABEL.get(mode) if mode != 7 else MODE7_LABEL.get(reg)
         if dest is None:
             return None
+        # the fiea table names the destinations its own way
         dest = {'(xxx).W': '$XXX.W', '(xxx).L': '$XXX.L',
+                '(d16,An) or (d16,PC)': '(d16,An)',
                 '( d8,An,Xn) or ( d8,PC,Xn)': '(d8,An,Xn) or (d8,PC,Xn)'}.get(dest, dest)
         return f'#<data>{w},{dest}'
     if mode == 7 and reg == 4:                       # immediate operand
@@ -115,6 +135,14 @@ def build(cpu):
         section = {dec.FEA: 'fea', dec.FIEA: 'fiea', dec.CEA: 'cea',
                    dec.CIEA: 'ciea', dec.JEA: 'jea'}.get(cls)
         if section is None:
+            continue
+        if section == 'ciea':
+            v = CIEA.get((mode, reg if mode == 7 else 0, 1 if size == 2 else 0))
+            if v is None:
+                continue
+            cc, head, tail, plus = v
+            entries[idx] = (1 << 15) | (cc << 8) | (head << 3) | (tail << 1) | plus
+            hit += 1
             continue
         if section == 'jea':
             v = JEA.get((mode, reg if mode == 7 else 0))
