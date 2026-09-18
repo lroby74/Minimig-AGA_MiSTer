@@ -58,6 +58,30 @@ reference places those two in BPLCON1 bits 8 and 9 for playfield 1 and bits 12
 and 13 for playfield 2, with bits 10-11 and 14-15 extending the range to 64
 lo-res pixels. The two views agree.
 
+The register that carries those two bits for the display window is DIWHIGH,
+and the specification gives its layout outright:
+
+> DIWHIGH p 1E4 W AD Display Window upper bits for start,stop
+>
+>     Bit# 15 14 13  12 11 10 09 08   07 06 05  04 03 02 01 00
+>           x  x H10 H1 H0 V10 V9 V8   x  x H10 H1 H0 V10 V9 V8
+>              (stop)                     (start)
+>
+> H1 and H0 values define 70nS and 35nS increments respectively, and are new
+> LISA bits.
+>
+> NOTE: In all 3 display window registers, horizontal bit positions have been
+> renamed to reflect HIRES pixel increments, e.g. what used be called H0 is
+> now referred to as H2.
+
+and states the interlock that goes with it:
+
+> DIWHIGH is reset by writes to DIWSTRT or DIWSTOP. This interlock is
+> inherited from ECS Denise.
+
+For sprites the same two bits are in SPRxCTL, bit 04 SH1 at 70 ns and bit 03
+SH0 at 35 ns, with bit 00 SH2 the 140 ns bit that ECS already had.
+
 **Sprite resolution.** BPLCON3 bits 6-7 set it independently of the bitplane
 resolution: 00 ECS default, 01 lo-res 140 ns, 10 hi-res 70 ns, 11 super-hires
 35 ns. The AA specification also states sprites can now be positioned at 35 ns
