@@ -1,0 +1,125 @@
+Amiga Hardware Reference Manual, 3rd edition - DMA time slot allocation
+Extracted from https://archive.org/details/amiga-hardware-reference-manual-3rd-edition
+The figure itself (6-9) is a scanned diagram and does not survive text extraction;
+the prose below carries the slot budget. Read the figure from the scan for the
+slot-by-slot chart.
+========================================================================
+
+
+The operations of the blitter affect the performance of the rest of the system. The following 
+sections explain how system performance is affected by blitter direct memory access priority, 
+DMA time slot allocation, bus sharing between the 680x0 and the display hardware, the 
+operations of the blitter and Copper, and different playfield display sizes. 
+
+
+The blitter performs its various data-fetch, modify, and store operations through DMA sequences, 
+and it shares memory access with other devices in the system. Each device that accesses memory 
+has a priority level assigned to it, which indicates its importance relative to other devices. 
+
+
+Disk DMA, audio DMA, display DMA, and sprite DMA all have the highest priority level. 
+Display DMA has priority over sprite DMA under certain circumstances. Each of these four 
+devices is allocated a group of time slots during each horizontal scan of the video beam. If a 
+device does not request one of its allocated time slots, the slot is open for other uses. These 
+devices are given first priority because missed DMA cycles can cause lost data, noise in the sound 
+output, or on-screen interruptions. 
+
+
+The Copper has the next priority because it has to perform its operations at the same time during 
+each display frame to remain synchronized with the display beam sweeping across the screen. 
+
+
+The lowest priorities are assigned to the blitter and the 68000, in that order. The blitter is given 
+the higher priority because it performs data copying, modifying, and line drawing operations 
+operations much faster than the 68000. 
+
+
+During a horizontal scan line (about 63 microseconds), there are 227.5 ‘‘color clocks’’, or 
+memory access cycles. A memory cycle is approximately 280 ns in duration. The total of 227.5 
+cycles per horizontal line includes both display time and non-display time. Of this total time, 226 
+cycles are available to be allocated to the various devices that need memory access. 
+
+
+The time-slot allocation per horizontal line is: 
+
+
+4 cycles for memory refresh 
+
+3 cycles for disk DMA 
+
+4 cycles for audio DMA (2 bytes per channel) 
+
+16 cycles for sprite DMA (2 words per channel) 
+
+80 cycles for bitplane DMA (even- or odd-numbered slots according to the display size used) 
+
+
+Figure 6-9 shows one complete horizontal scan line and how the clock cycles are allocated. 
+
+
+194 Amiga Hardware Reference Manual 
+
+
+UOHRIOTTY 10S SWELL VIN :6-9 N81 
+
+
+p 
+Al0Wws G jauul OM apt. 
+Usauyay Arowaw DZ (ravueyo/sp0m Z) + VNC 810s f] 
+
+
++ ¥WO IG & #00089 pue saddod ‘s21111g 40) aiqetiene s10/S CJ ‘waquinu xay e saiesipul ¢ 
+‘Stuawasnbas asoyi yorew 02 , paisnipe,, uaa sey 1e4o Burwn siys a20;a/94 4 
+“Wers Aeidsip pue 1481s YDIay eLep 204 SaNjeA d1y19ads UHEL1a9 SpUeWAP asempreY WaISAS |eNIoW 
+“aS€O ays JOU SI SIY “S3]9A9 Ysa4yas AsOWaW ay) 40 BUD apNjoxa 1 sseadde Q aj2AD SIU, fF 
+(rauueys saiAq Z) + YING CIP vn ¢ aueld Aq "YING aueig3'g apow Oy9 *$40)S Q auinbas SuONoNAsU! LEAMA 13dd0D 
+“S1OjS p asiNbas SUONINsIsuI aAOW e1eQ 1addoD aon 
+
+
+$ aueid AQ "YING autig-1g apow OZE “paws0j29d Bu1aq $1 VONesado parerosse ay) 4! S10] axel AjUO sUONeadO Asay, ¢ 
+
+
+
+
+
+€ a9A2 se 
+
+
+
+
+
+
+
+
+
+
+
+DAD ydIEZ 
+
+
+
+
+
+e1eQ aur | a A 2 ee A 2 (a An a An 2 merey retry Trey ererry ersyey vererry Tes] ey 
+2 OG UG a ee 
+es ewes 61-5 
+
+$319A0 
+
+
+
+
+
+“say JEUON 
+
+
+BES ajDA0 105 
+Parajdwoo yaray e1eQ 
+
+
+gas: 
+
+
+
+
+
