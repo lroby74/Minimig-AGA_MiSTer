@@ -49,3 +49,25 @@ instruction would buy nothing for fidelity. It would only matter if a faster
 Memory here answers instantly, so these are upper bounds on the core. Real
 SDRAM and cache misses add cycles on top, and those come out of the same
 margin.
+
+## Checking the model against a real instruction stream
+
+    VASM=/path/to/vasmm68k_mot sh run_trace.sh
+
+`run_cpi.sh` above measures the core. This measures the model, and it does it
+on real instructions rather than on pulses made up by a testbench.
+
+`mixed.s` is a small loop of ordinary work - a load, an add, a shift, a store,
+an immediate to memory, two conditional branches, a multiply. It runs through
+the real TG68K kernel, and every instruction the kernel starts is recorded
+along with the outcome of the branch before it, which is what the model sees on
+`opc_cond`. That stream is then charged two ways:
+
+    rtl    : 1000 instructions, 5633.5 clocks, 5.634 each
+    python : 1000 instructions, 5634 clocks, 5.634 each
+
+`rtl` is `cpu_cycles.v` doing it in hardware. `python` is `model.py`, which
+works equations 11-1 and 11-2 from the same tables in a few lines of Python.
+They are independent implementations, so agreeing is evidence and disagreeing
+names a bug. The half clock between them is the fractional rate accumulator,
+which carries a remainder the integer model does not.

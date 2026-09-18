@@ -23,7 +23,8 @@ entity tb_cpi is
 	generic(
 		PROG   : string  := "prog.hex";
 		WARMUP : integer := 200;       -- instructions to skip before counting
-		COUNT  : integer := 2000       -- instructions to average over
+		COUNT  : integer := 2000;      -- instructions to average over
+		TRACE  : string  := ""         -- if set, write every opcode started here
 	);
 end tb_cpi;
 
@@ -42,6 +43,7 @@ architecture sim of tb_cpi is
 	signal dcache    : std_logic;
 	signal opc_start : std_logic;
 	signal opc_out   : std_logic_vector(15 downto 0);
+	signal opc_cond  : std_logic;
 
 	type ram_t is array (0 to 65535) of std_logic_vector(15 downto 0);
 	shared variable ram : ram_t := (others => x"4E71");
@@ -63,7 +65,7 @@ begin
 			longword => longword, nResetOut => nresetout, FC => fc,
 			clr_berr => clr_berr, skipFetch => skipf, regin_out => regin,
 			CACR_out => cacr, D_CACHE_out => dcache, VBR_out => vbr,
-			opc_start => opc_start, opc_out => opc_out);
+			opc_start => opc_start, opc_out => opc_out, opc_cond => opc_cond);
 
 	addr_w <= to_integer(unsigned(addr_out(16 downto 1)));
 
@@ -99,6 +101,9 @@ begin
 	end process;
 
 	meter: process(clk)
+		file tf         : text;
+		variable topen  : boolean := false;
+		variable tl     : line;
 		variable n      : integer := 0;
 		variable cyc    : integer := 0;
 		variable t0     : integer := 0;
@@ -107,9 +112,19 @@ begin
 		variable l      : line;
 	begin
 		if rising_edge(clk) and nreset = '1' then
+			if TRACE /= "" and not topen then
+				file_open(tf, TRACE, write_mode); topen := true;
+			end if;
 			cyc := cyc + 1;
 			if opc_start = '1' then
 				n := n + 1;
+				if topen and n > WARMUP and n <= WARMUP + COUNT then
+					-- the opcode starting, and the condition of the one before
+					write(tl, to_integer(unsigned(opc_out)));
+					write(tl, string'(" "));
+					if opc_cond = '1' then write(tl, 1); else write(tl, 0); end if;
+					writeline(tf, tl);
+				end if;
 				if n = WARMUP then
 					t0 := cyc; started := true; first := opc_out;
 				elsif started and n = WARMUP + COUNT then
@@ -118,6 +133,7 @@ begin
 					write(l, string'("  cycles/instruction "));
 					write(l, real(cyc - t0) / real(COUNT), right, 8, 3);
 					writeline(output, l);
+					if topen then file_close(tf); end if;
 					assert false report "done" severity failure;
 				end if;
 			end if;

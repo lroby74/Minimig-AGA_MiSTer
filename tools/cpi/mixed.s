@@ -1,0 +1,26 @@
+	section code,code
+	dc.l	$00010000
+	dc.l	start
+start:
+	lea	$8000,a0
+	lea	$8100,a1
+	lea	$9000,a2
+	moveq	#7,d3
+loop:
+	move.l	(a0),d0
+	add.l	d1,d0
+	lsl.l	#2,d0
+	move.l	d0,(a1)
+	addi.l	#$1234,(a2)
+	cmp.l	d1,d0
+	bne.s	skip
+	moveq	#0,d2
+skip:
+	tst.l	d0
+	beq.s	other
+	swap	d0
+other:
+	muls.w	d3,d2
+	move.l	d2,d4
+	and.l	#$FF,d4
+	bra.w	loop
