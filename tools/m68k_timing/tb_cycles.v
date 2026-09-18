@@ -142,6 +142,64 @@ initial begin
 	report("DIVS.L D1,D0", 90.0);
 	snd = 16'h0000;
 
+	// The indexed addressing modes come in two shapes and only the extension
+	// word says which. Brief format first, the one the ROM holds: ADD EA,Dn is
+	// 2 clocks and fea (d8,An,Xn) is 6 with a tail of 2 the operation's head of
+	// 0 cannot take, so 8.
+	snd = 16'h0000;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L (d8,A0,Xn),D0  brief", 8.0);
+
+	// full format, no base displacement and no indirection: 11.6.1 gives that
+	// 6 as well, so the same 8 - the shapes only part company further down
+	snd = 16'h0110;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L ([B]-less full format),D0", 8.0);
+
+	// a word base displacement is 8, a long one 12
+	snd = 16'h0120;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L (d16,B),D0", 10.0);
+	snd = 16'h0130;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L (d32,B),D0", 14.0);
+
+	// memory indirect: 10 with no base displacement, 12 with a word one, and
+	// an outer displacement puts two on top whatever its size
+	snd = 16'h0111;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L ([B],I),D0", 12.0);
+	snd = 16'h0121;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L ([d16,B],I),D0", 14.0);
+	snd = 16'h0133;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hD0B0); n=n+1; end end_run;
+	report("ADD.L ([d32,B],I,d32),D0", 20.0);
+
+	// the jump table has its own numbers: JSR is 4 and jea full format 18
+	snd = 16'h0133;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'h4EB0); n=n+1; end end_run;
+	report("JSR ([d32,B],I,d32)", 22.0);
+
+	// and the calculate table's plain (B) is the one row of the three that
+	// differs: head 6, and it takes in the operation's head as well
+	snd = 16'h0110;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'h41F0); n=n+1; end end_run;
+	report("LEA (B),A0", 8.0);
+	snd = 16'h0111;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'h41F0); n=n+1; end end_run;
+	report("LEA ([B],I),A0", 12.0);
+
+	// a bit field instruction puts its own word in that slot, so bit 8 of it
+	// means nothing about the address and the brief format entry stands
+	snd = 16'h0000;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hE8F0); n=n+1; end end_run;
+	report("BFTST (d8,A0,Xn) ext bit 8 clear", 14.0);
+	snd = 16'h0133;
+	start_run; for (i=0;i<300;i=i+1) begin issue(16'hE8F0); n=n+1; end end_run;
+	report("BFTST (d8,A0,Xn) ext bit 8 set", 14.0);
+	snd = 16'h0000;
+
 	speed = 2'b10; RATE = 1804.0;       // 50MHz
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E71); n=n+1; end end_run;
 	report("NOP at 50MHz", 2.0);

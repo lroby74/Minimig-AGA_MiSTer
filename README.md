@@ -120,9 +120,10 @@ budget is earned by a fractional accumulator at `4096 x f_cpu / f_sys`:
 
 Nothing in the ROMs is estimated: a form with no table row behind it is charged the
 architectural minimum of two clocks instead of a made-up number, and the generator
-reports its coverage. MOVEM, a signed long divide and the iteration a DBcc loop runs
-out on take numbers that are not in the opcode, so the kernel brings out the word after
-it and the flag for the expiring iteration and the model reads those. What the model
+reports its coverage. Four things take numbers that are not in the opcode - MOVEM's
+register count, the bit that makes a long divide signed, which shape an indexed address
+is in, and the iteration a DBcc loop runs out on - so the kernel brings out the word
+after the opcode and a flag for the expiring iteration, and the model reads those. What the model
 does not touch is the memory system: chip RAM and the custom registers stay on the
 7 MHz bus, so chipset-bound code does not scale with this setting - as on real hardware.
 

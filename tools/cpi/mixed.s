@@ -24,6 +24,7 @@ other:
 	muls.w	d3,d2
 	move.l	d2,d4
 	and.l	#$FF,d4
+	add.l	([$10,a0,d1.l],$20),d5
 	movem.l	(a7)+,d0-d3/a0-a2
 	divs.l	d3,d5
 	moveq	#3,d6

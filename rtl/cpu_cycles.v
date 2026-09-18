@@ -127,10 +127,38 @@ wire [4:0] op_h  = op_e[13:9];
 wire [7:0] op_cc = op_e[8:1] + (divsl ? 8'd12 : 8'd0);
 
 wire       ea_v  = ea_e[15] & |eacl;
-wire [6:0] ea_cc = ea_v ? ea_e[14:8] : 7'd0;
-wire [4:0] ea_h  = ea_v ? ea_e[7:3]  : 5'd0;
-wire [1:0] ea_t  = ea_v ? ea_e[2:1]  : 2'd0;
-wire       ea_ph = ea_v & ea_e[0];
+
+// The indexed modes come in two shapes and the opcode does not say which: with
+// extension word bit 8 clear it is the brief format the ROM holds, and with it
+// set it is the full format, where a base displacement, a memory indirection
+// and an outer displacement can each be there or not. 11.6.1, 11.6.3 and
+// 11.6.5 tabulate those, and all three tables come to the same numbers: the
+// base costs 6 clocks and 8 or 12 with a word or long displacement under it,
+// an indirection makes that 10, 12 or 16, and an outer displacement adds two
+// whatever its size. Head is 4 and tail 0 throughout, except the plain (B) of
+// the calculate and jump tables, which is 6 and takes in the operation's head.
+//
+// The word after the opcode is the address extension only when nothing else
+// claims that slot, so the static bit instructions and the bit field ones,
+// which put their own word there first, keep the brief format entry. So do
+// the two immediate classes, whose operand comes before the extension.
+wire ff_pre = (opc_l[15:8] == 8'h08)                                   // BTST/BCHG/BCLR/BSET #<data>
+           || (opc_l[15:12] == 4'hE && opc_l[11] && &opc_l[7:6]);      // BFxxx
+wire ff = ea_v & eacl[0] & snd_l[8] & ~ff_pre
+        & ((opc_l[5:3] == 3'b110) | (opc_l[5:0] == 6'b111011));
+
+wire       ff_mi = |snd_l[1:0];                    // memory indirect
+wire       ff_od = ff_mi & (snd_l[1:0] != 2'b01);  // and an outer displacement
+wire [1:0] ff_bd = snd_l[5:4];                     // 01 none, 10 word, 11 long
+wire [6:0] ff_cc = (ff_mi ? (ff_bd == 2'b10 ? 7'd12 : ff_bd == 2'b11 ? 7'd16 : 7'd10)
+                          : (ff_bd == 2'b10 ? 7'd8  : ff_bd == 2'b11 ? 7'd12 : 7'd6))
+                 + (ff_od ? 7'd2 : 7'd0);
+wire       ff_ph = ~ff_mi & (ff_bd != 2'b10) & (ff_bd != 2'b11) & (eacl != 3'd1);
+
+wire [6:0] ea_cc = ff ? ff_cc : ea_v ? ea_e[14:8] : 7'd0;
+wire [4:0] ea_h  = ff ? (ff_ph ? 5'd6 : 5'd4) : ea_v ? ea_e[7:3] : 5'd0;
+wire [1:0] ea_t  = ff ? 2'd0 : ea_v ? ea_e[2:1] : 2'd0;
+wire       ea_ph = ff ? ff_ph : (ea_v & ea_e[0]);
 wire       model = op_e[19] & (~|eacl | ea_e[15]);
 
 // A conditional branch with a byte displacement costs 4 clocks when it is not

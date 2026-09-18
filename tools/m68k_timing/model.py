@@ -50,6 +50,34 @@ def movem_n(op, snd):
     return (8 + 4 * n if (op >> 10) & 1 else 4 + 2 * n), 2, 0
 
 
+def full_format(op, snd, eacl):
+    """(cc, head, plus) for a full format address, or None if this is not one.
+
+    Extension word bit 8 picks the shape, and only the fetch, calculate and
+    jump tables can be read from it: the two immediate classes put the operand
+    in that slot first, and so do the static bit and bit field instructions.
+    11.6.1, 11.6.3 and 11.6.5 agree on the numbers - a base at 6 clocks, 8 or
+    12 with a word or long displacement, 10, 12 or 16 once indirect, and two
+    more for an outer displacement whatever its size - and differ only in the
+    plain (B), which the calculate and jump tables give head 6 and the
+    operation's head on top.
+    """
+    if eacl not in (dec.FEA, dec.CEA, dec.JEA) or not (snd >> 8) & 1:
+        return None
+    if (op >> 3) & 7 != 6 and (op & 0x3F) != 0x3B:
+        return None
+    if (op >> 8) == 0x08:                          # BTST/BCHG/BCLR/BSET #<data>
+        return None
+    if (op >> 12) == 0xE and (op >> 11) & 1 and (op >> 6) & 3 == 3:
+        return None                                # BFxxx
+    bd = (snd >> 4) & 3
+    mi = snd & 3
+    od = mi and (mi != 1)
+    cc = ({2: 12, 3: 16}.get(bd, 10) if mi else {2: 8, 3: 12}.get(bd, 6)) + (2 if od else 0)
+    plus = (not mi) and bd not in (2, 3) and eacl != dec.FEA
+    return cc, (6 if plus else 4), plus
+
+
 def run(trace, cpu='68030'):
     ins, ea = entries(cpu)
     prev_tail = 0
@@ -73,7 +101,12 @@ def run(trace, cpu='68030'):
         ea_v = e['valid'] and i['ea'] != 0
         model = i['valid'] and (i['ea'] == 0 or e['valid'])
 
-        ea_cc, ea_h, ea_t = (e['cc'], e['head'], e['tail']) if ea_v else (0, 0, 0)
+        ff = full_format(op, snd, i['ea']) if ea_v else None
+        if ff:
+            ea_cc, ea_h, ea_t = ff[0], ff[1], 0
+            e = dict(e, plus=ff[2])
+        else:
+            ea_cc, ea_h, ea_t = (e['cc'], e['head'], e['tail']) if ea_v else (0, 0, 0)
         # 11.6.8: DIVU.L is 78 clocks and DIVS.L 90, and the sign is in the
         # word after the opcode, bit 11
         op_cc = i['cc'] + (12 if (op >> 6) == 0x131 and (snd >> 11) & 1 else 0)

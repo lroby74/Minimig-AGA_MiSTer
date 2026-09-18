@@ -97,7 +97,7 @@ The RTL composes the two by equation 11-2:
 
 and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 
-### The three things no opcode ROM can hold
+### The four things no opcode ROM can hold
 
 MOVEM's register count and the bit that makes a long divide signed are both in
 the word *after* the opcode, so nothing indexed by the opcode can carry their
@@ -116,7 +116,23 @@ A note on the MOVEM row: the table's two footnotes print the 8+4n and 4+2n
 formulas under swapped labels. The (r/p/w) column settles it - the 8+4n row
 does n reads and no writes, so it is the one that loads registers.
 
-**DBcc** is the third, and it is not in any word of the instruction: 11.6.13
+**The full-format addressing modes** are the third. An indexed mode comes in
+two shapes and only extension word bit 8 says which: brief, which the ROM
+holds, or full, where a base displacement, a memory indirection and an outer
+displacement can each be there or not. 11.6.1, 11.6.3 and 11.6.5 tabulate
+those, and all three come to the same numbers - a base at 6 clocks, 8 or 12
+with a word or long displacement under it, 10, 12 or 16 once indirect, and two
+more for an outer displacement whatever its size, with head 4 and tail 0
+throughout. The one row that differs is the plain `(B)`, which the calculate
+and jump tables give head 6 and the operation's head on top. The model reads
+the shape out of the extension word and computes the rest.
+
+Three page readings went into that, because the text layer mangles the labels
+in the middle of those tables: `([d32,B])` comes out as `([d16,B])` on page
+11-32, and the calculate table's `(B)` row is the only one of the three with
+`6 + op head` in its head column.
+
+**DBcc** is the fourth, and it is not in any word of the instruction: 11.6.13
 charges a looping iteration 6 clocks and the one the counter runs out on 10,
 and which it was depends on the count reaching -1. The kernel decides it in
 its `dbcc1` state, where it loops on `exe_condition = '0' and c_out(1) = '1'`,
@@ -139,9 +155,11 @@ coprocessor and MMU space, and encodings TG68K does not implement.
 
 ### What is still open
 
-* **The full-format addressing modes.** The memory-indirect forms of every
-  effective-address table are still on the text extraction rather than
-  transcribed. TG68K's support for them is partial anyway.
+* **The full-format addressing modes under the two immediate classes.** fiea
+  and ciea put the operand in the slot the address extension would be in, so
+  the word after the opcode says nothing about the address there and the brief
+  format entry stands. The same goes for the static bit instructions and the
+  bit field ones, which put their own word there first.
 * Nothing else from section 11 is knowingly wrong. What is left is the
   coverage gap above: opcodes `decode.py` does not map, which are the
   coprocessor and MMU space and encodings TG68K does not implement, and the
@@ -191,6 +209,9 @@ manual. Every case has to come back OK:
 
     NOP                                  1.999   tables   2.00   OK
     MOVEM.L D0-D7/A0-A6,-(A7) 15 regs   36.001   tables  36.00   OK
+    ADD.L ([d32,B],I,d32),D0            20.000   tables  20.00   OK
+    LEA (B),A0                           8.000   tables   8.00   OK
+    BFTST (d8,A0,Xn) ext bit 8 set      14.000   tables  14.00   OK
     DBcc looping                         6.000   tables   6.00   OK
     DBcc expiring every time             9.992   tables  10.00   OK
     DIVS.L D1,D0                        90.000   tables  90.00   OK
