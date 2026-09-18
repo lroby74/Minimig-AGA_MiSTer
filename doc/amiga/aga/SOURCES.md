@@ -22,8 +22,18 @@ they can be regenerated and checked against the manuals.
 | Amiga Hardware Reference Manual, 3rd edition | DMA time slot allocation, blitter, copper, OCS/ECS baseline | https://archive.org/details/amiga-hardware-reference-manual-3rd-edition |
 | AGA coding reference | Register bit layouts as programmers use them, fills gaps the AA spec leaves implicit | https://jvaltane.kapsi.fi/amiga/howtocode/aga.html |
 
-`AA_chipset_spec.txt` is an OCR of the AA specification, which is a scan with
-no text layer. Check anything surprising against the scan itself.
+Two copies of the AA specification are OCR'd here; both are scans with no text
+layer, so check anything surprising against a scan.
+
+* `AA_chipset_spec.txt` - the copy hosted at the URL above.
+* `AA_chipset_spec_rev_19910508.txt` - the 8 May 1991 revision, carrying
+  R. Raible's editing and Spence's handwritten corrections. The two run 90%
+  word-identical; this one has the fuller register list and the bitplane
+  scroll paragraph quoted below.
+
+Commodore's 1991 confidentiality notice is on the title page. The company has
+been gone since 1994 and the document has circulated publicly for decades; it
+is kept here as the reference for a hardware-compatible implementation.
 
 `AHRM_dma_time_slots.txt` is the slot budget prose. The per-slot chart is
 figure 6-9 and is a scanned diagram, so it has to be read from the scan.
@@ -52,3 +62,15 @@ lo-res pixels. The two views agree.
 resolution: 00 ECS default, 01 lo-res 140 ns, 10 hi-res 70 ns, 11 super-hires
 35 ns. The AA specification also states sprites can now be positioned at 35 ns
 and are available attached in all resolutions.
+
+
+**Bitplane scroll.** The `TODO` asks whether the AGA bitplane shifter is 64
+bits plus a super-hires stage. The AA specification answers it directly:
+
+> BPLCON1 now contains an 8 bit scroll value for each of the playfields.
+> Granularity of scroll now extends down to 35nSec (1 SHRES pixel), and scroll
+> can delay playfield thru 32 bus cycles. Bits BPAGEM and BPL32 in new
+> register FMODE control size of bitplane fetch.
+
+Eight bits of scroll per playfield, 35 ns granularity, and a delay reaching 32
+bus cycles - which is the number the shifter has to be able to hold.
