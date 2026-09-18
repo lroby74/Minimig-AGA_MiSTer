@@ -124,6 +124,7 @@ entity TG68KdotC_Kernel is
 		IPL_autovector			: in std_logic:='0';
 		berr						: in std_logic:='0';					-- only 68000 Stackpointer dummy
 		CPU						: in std_logic_vector(1 downto 0):="00";  -- 00->68000  01->68010  11->68020(only some parts - yet)
+		CPU030					: in std_logic:='0';                     -- 1 -> 68030 (CACR/CAAR/MSP/ISP), CPU must be "11"
 		addr_out					: out std_logic_vector(31 downto 0);
 		data_write				: out std_logic_vector(15 downto 0);
 		nWr						: out std_logic;
@@ -354,7 +355,11 @@ architecture logic of TG68KdotC_Kernel is
 
 	signal movec_data			: std_logic_vector(31 downto 0);
 	signal VBR					: std_logic_vector(31 downto 0);
-	signal CACR					: std_logic_vector(3 downto 0);
+	signal CACR					: std_logic_vector(13 downto 0);
+	signal CAAR					: std_logic_vector(31 downto 0);
+	signal MSP					: std_logic_vector(31 downto 0);
+	signal ISP					: std_logic_vector(31 downto 0);
+	signal cclr					: std_logic_vector(4 downto 0);
 	signal CACR_DC				: std_logic;
 	signal CACR_DC_owned		: std_logic;
 	signal DFC					: std_logic_vector(2 downto 0);
@@ -4007,30 +4012,45 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 -----------------------------------------------------------------------------
 -- MOVEC
 -----------------------------------------------------------------------------
-  process (clk, SFC, DFC, VBR, CACR, CACR_DC, brief)
+  process (clk, SFC, DFC, VBR, CACR, CAAR, MSP, ISP, CACR_DC, CPU030, brief)
   begin
 	-- all other hexa codes should give illegal isntruction exception
 	if rising_edge(clk) then
 	  if Reset = '1' then
 		VBR <= (others => '0');
 		CACR <= (others => '0');
+		CAAR <= (others => '0');
+		MSP <= (others => '0');
+		ISP <= (others => '0');
+		cclr <= (others => '0');
 		CACR_DC <= '1';
 		CACR_DC_owned <= '0';
-	  elsif clkena_lw = '1' and exec(movec_wr) = '1' then
-		case brief(11 downto 0) is
-		  when X"000" => SFC <= reg_QA(2 downto 0); -- SFC -- 68010+
-		  when X"001" => DFC <= reg_QA(2 downto 0); -- DFC -- 68010+
-		  when X"002" =>
-		    CACR <= reg_QA(3 downto 0); -- 68020+
-		    CACR_DC <= reg_QA(8);
-		    CACR_DC_owned <= '1';
-		  when X"800" => NULL; -- USP -- 68010+
-		  when X"801" => VBR <= reg_QA; -- 68010+
-		  when X"802" => NULL; -- CAAR -- 68020+
-		  when X"803" => NULL; -- MSP -- 68020+
-		  when X"804" => NULL; -- isP -- 68020+
-		  when others => NULL;
-		end case;
+	  else
+		if cclr /= "00000" then cclr <= cclr - 1; end if;
+		if clkena_lw = '1' and exec(movec_wr) = '1' then
+		  case brief(11 downto 0) is
+		    when X"000" => SFC <= reg_QA(2 downto 0); -- SFC -- 68010+
+		    when X"001" => DFC <= reg_QA(2 downto 0); -- DFC -- 68010+
+		    when X"002" =>
+		      if CPU030 = '1' then
+		        -- 68030: WA,DBE,FD,ED,IBE,FI,EI are latched, CD,CED,CI,CEI are momentary
+		        CACR <= reg_QA(13 downto 0) and "11001100010011";
+		        if (reg_QA(11) or reg_QA(10) or reg_QA(3) or reg_QA(2)) = '1' then
+		          cclr <= (others => '1');
+		        end if;
+		      else
+		        CACR <= "0000000000" & reg_QA(3 downto 0); -- 68020+
+		      end if;
+		      CACR_DC <= reg_QA(8);
+		      CACR_DC_owned <= '1';
+		    when X"800" => NULL; -- USP -- 68010+
+		    when X"801" => VBR <= reg_QA; -- 68010+
+		    when X"802" => CAAR <= reg_QA; -- CAAR -- 68020+
+		    when X"803" => MSP <= reg_QA; -- MSP -- 68020+
+		    when X"804" => ISP <= reg_QA; -- isP -- 68020+
+		    when others => NULL;
+		  end case;
+		end if;
 	  end if;
 	end if;
 
@@ -4038,16 +4058,24 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 	case brief(11 downto 0) is
 		when X"000" => movec_data <= "00000000000000000000000000000" & SFC;
 		when X"001" => movec_data <= "00000000000000000000000000000" & DFC;
-	  when X"002" => movec_data <= "00000000000000000000000" & CACR_DC & "0000" & (CACR AND "0011");
+	  when X"002" =>
+		if CPU030 = '1' then
+		  movec_data <= "000000000000000000" & CACR;
+		else
+		  movec_data <= "00000000000000000000000" & CACR_DC & "0000" & (CACR(3 downto 0) AND "0011");
+		end if;
 
 	  when X"801" => 
 		movec_data <= VBR;
 		--end if;
+	  when X"802" => movec_data <= CAAR;
+	  when X"803" => movec_data <= MSP;
+	  when X"804" => movec_data <= ISP;
 	  when others => NULL;
 	end case;
   end process;
 
-  CACR_out <= CACR;
+  CACR_out <= (CACR(3) or cclr(4)) & CACR(2 downto 0);
   D_CACHE_out <= CACR_DC or not CACR_DC_owned;
   VBR_out <= VBR;
 -----------------------------------------------------------------------------

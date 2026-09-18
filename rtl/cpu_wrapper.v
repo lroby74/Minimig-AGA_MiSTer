@@ -235,7 +235,8 @@ cpu_inst_p
   .nresetout(reset_out_p),
   .longword(longword),
   
-  .cpu(cpucfg[1:0]),
+  .cpu({cpucfg[1], cpucfg[1] | cpucfg[0]}),   // 68030 (10) uses the 68020 (11) feature set
+  .cpu030(cpucfg[1:0] == 2'b10),
   .busstate(cpustate_p),		// 0: fetch code, 1: no memaccess, 2: read data, 3: write data
   .cacr_out(cacr_p),
   .d_cache_out(dcache_sw_en_p),
