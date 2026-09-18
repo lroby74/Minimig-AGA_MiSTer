@@ -13,7 +13,7 @@ R=../../rtl
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
-for tb in tb_hwindow; do
+for tb in tb_hwindow tb_hsprite; do
 	iverilog -g2005-sv -o "$W/$tb" -s $tb \
 		$R/denise*.v $R/amiga_clk.v altsyncram.v $tb.v 2>&1 | grep -i error && exit 1
 	"$W/$tb"

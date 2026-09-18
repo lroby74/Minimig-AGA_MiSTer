@@ -15,6 +15,7 @@ module denise_sprites_shifter
   input  aen,          // address enable
   input  [1:0] address,         // register address input
   input  [8:0] hpos,        // horizontal beam counter
+  input aga,
   input [15:0] fmode,
   input shift,
   input [48-1:0] chip48,
@@ -35,6 +36,7 @@ reg    [63:0] datlb;    // data register B
 reg    [63:0] shifta;    // shift register A
 reg    [63:0] shiftb;    // shift register B
 reg    [8:0] hstart;    // horizontal start value
+reg    [1:0] hstart_lo;  // AA: 70ns and 35ns bits of it (SPRxCTL SH1,SH0)
 reg    armed;        // sprite "armed" signal
 reg    load;        // load shift register signal
 reg    load_del;
@@ -89,10 +91,12 @@ always @(posedge clk)
   end
 
 // CTL register
+// SH2 at 140ns has been bit 0 since OCS; AA added SH1 at 70ns in bit 4 and
+// SH0 at 35ns in bit 3.
 always @(posedge clk)
   if (clk7_en) begin
     if (aen && address==CTL)
-      {attach,hstart[0]} <= {data_in[7],data_in[0]};
+      {attach,hstart[0],hstart_lo} <= {data_in[7],data_in[0],aga ? data_in[4:3] : 2'b00};
   end
 
 // data register A
@@ -117,9 +121,16 @@ end
 
 //--------------------------------------------------------------------------------------
 
+// The position compare runs at 140ns like the beam counter, so the two new
+// bits delay the load by nought to three 35ns ticks inside the pixel that
+// matched. Both clear, this is the clk7_en load it always was.
+reg  [2:0] load_d;
+wire [3:0] load_s = {load_d, clk7_en & load};
+always @(posedge clk) load_d <= load_s[2:0];
+
 // sprite shift register
 always @(posedge clk)
-  if (clk7_en && load) // AMR - load_del) // load new data into shift register
+  if (load_s[hstart_lo]) // AMR - load_del) // load new data into shift register
   begin
     shifta[63:0] <= datla[63:0];
     shiftb[63:0] <= datlb[63:0];
