@@ -97,28 +97,75 @@ caches through the normal `CacheControl()` path. There is no MMU and no FPU, so 
 (MuForce, Enforcer, 68030.library setups) and FPU code will not run.
 
 The CPU clock is selectable - 25, 40 and 50 MHz, the speeds real 68030 accelerator
-cards were sold at.
-The pipeline is paced by a fractional clock enable (one enable every D sysclk):
+cards were sold at - and what paces it is a per-instruction cycle model rather than a
+clock divider.
 
-| setting | D | effective |
+Section 11 of the MC68030 User's Manual gives every instruction a head, a tail and an
+instruction-cache-case time, and composes a stream of them by equation 11-1:
+
+    CC1 + [CC2 - min(H2,T1)] + [CC3 - min(H3,T2)] + ...
+
+so what an instruction costs depends on the one before it, and an instruction that
+takes an effective address composes the two the same way. `rtl/cpu_cycles.v` implements
+both equations against ROM images built straight from those tables by
+`tools/m68k_timing`, and holds the CPU until each instruction has been paid for. The
+budget is earned by a fractional accumulator at `4096 x f_cpu / f_sys`:
+
+| setting | rate (PAL / NTSC) | CPU clock |
 |---|---|---|
-| `00` | 2.725 | 25 MHz |
-| `01` | 1.704 | 40 MHz |
-| `10` | 1.363 | 50 MHz |
-| `11` | 1 | unthrottled (~68 MHz) |
+| `00` | 902 / 894 | 25 MHz |
+| `01` | 1444 / 1430 | 40 MHz |
+| `10` | 1804 / 1788 | 50 MHz |
+| `11` | - | unthrottled |
 
-D comes from the same measurement the 68020 stock-speed throttle was calibrated
-against in #233: the unthrottled pipeline runs at 4.8x an A1200 68EC020 and is linear
-in D, so D = 68.14 / target MHz. Per-instruction error against real silicon is about
-+/-10%, because the core's cycle counts are not a 68030's, and only the pipeline is
-paced - chip RAM and custom registers stay on the 7 MHz bus, so chipset-bound code
-does not scale with this setting.
+Nothing in the ROMs is estimated: a form with no table row behind it is charged the
+architectural minimum of two clocks instead of a made-up number, and the generator
+reports its coverage. MOVEM, a signed long divide and the iteration a DBcc loop runs
+out on take numbers that are not in the opcode, so the kernel brings out the word after
+it and the flag for the expiring iteration and the model reads those. What the model
+does not touch is the memory system: chip RAM and the custom registers stay on the
+7 MHz bus, so chipset-bound code does not scale with this setting - as on real hardware.
 
-The cpu config byte from the HPS is now `SSPCCCTT`: `TT` the CPU type
+`tools/m68k_timing/run_tb.sh` checks twenty instruction forms against the manual's own
+numbers, and `tools/cpi/run_trace.sh` runs a thousand instructions captured from the
+real kernel through both the RTL and an independent Python implementation of the same
+equations. `tools/cpi/run_cpi.sh` measures what the core itself can sustain: with
+zero-wait memory it is faster than a 68030 on nearly every instruction, the binding
+form costing three cycles against two clocks, so all three settings have margin.
+
+The cpu config byte from the HPS is `SSPCCCTT`: `TT` the CPU type
 (`00`=68000, `01`=68010, `10`=68030, `11`=68020), `CCC` the cache config, `P` the
-68020 stock-speed throttle, `SS` the 68030 speed above. Selecting 68030 in the OSD
-needs the corresponding entry in Main_MiSTer's minimig CPU menu (the slot for code
-`10`, currently displayed as `-----`) plus the two speed bits.
+68020 stock-speed throttle, `SS` the 68030 speed above.
+
+**Selecting it needs a firmware change as well.** Main_MiSTer's minimig CPU menu has no
+entry for code `10` - the slot is displayed as `-----` - and no control for the two
+speed bits, so with stock firmware the core cannot be told to be a 68030.
+
+### AGA chipset accuracy
+
+AA put every horizontal comparator on 35 ns - a quarter of a lores pixel - and Minimig
+compared at 140 ns, so the extra bits had nowhere to land. The display window and the
+sprites now use them:
+
+* **DIWHIGH** bits 4 and 3 for the window start and 12 and 11 for the stop, 70 ns and
+  35 ns, cleared again by any write to DIWSTRT or DIWSTOP as on ECS Denise.
+* **SPRxCTL** bits 4 and 3 for the sprite start, below the 140 ns bit 0 that OCS
+  already had.
+
+Both take the position match where it was always taken and delay it by those bits, so
+nothing moves on OCS, on ECS, or on an AGA program that leaves them clear. BPLCON1's
+eight-bit playfield scroll was already right.
+
+Two bitplane DMA behaviours went in with them, both from `TODO`: a write to BPLxPT one
+cycle before the matching BPLxDAT fetch goes nowhere, because the DMA channel has the
+address a cycle ahead of the fetch; and a write to BPLxMOD one cycle before a modulo add
+does not change that add, though it is still accepted for the next one.
+
+`tools/aga/run_tb.sh` checks all of it - forty cases against Commodore's own AA chipset
+specification, quoted in `doc/amiga/aga/SOURCES.md`. The whole lot costs twenty-five
+ALMs and a hundred and sixty flip-flops.
+
+Still at 140 ns: HBSTRT and HBSTOP, which only matter with VARBEAMEN set.
 
 ### IDE and CDROM
 By default up to 2 IDE devices are supported. For Secondary Master/Slave devices, you have to install either IDEFix97 (shareware, WB3.1/3.9) or AtapiMagic (freeware, WB 3.1.4/3.2).
