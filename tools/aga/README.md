@@ -6,6 +6,11 @@ paragraphs each one is built from.
 
     sh run_tb.sh
 
+The testbench goes first on the iverilog command line so that its `timescale
+reaches the modules under it. Several of them carry `#1` delays, and a module
+compiled without a timescale gets the default one, where `#1` is a second and
+never lands inside a simulation - the registers simply never take their values.
+
 `altsyncram.v` is a simulation stand-in for the Altera primitive that Denise's
 colour table instantiates, so the hierarchy elaborates outside Quartus. It is
 not in `files.qip`; Quartus uses the real megafunction.
@@ -67,13 +72,58 @@ output:
 The whole ladder, 280 down to 35 ns, comes out in the right proportion, which
 is the thing worth checking: each bit is worth half the one above it.
 
+## tb_bpldma - the bitplane DMA register delays
+
+Two rules from `TODO`, quoted there from Toni Wilen:
+
+> Writing to BPLxPT when exactly next cycle has DMA to matching BPLxDAT: write
+> goes nowhere.
+
+> Writing to BPLxMOD when exactly next cycle is matching BPLxDAT write and it
+> also does modulo add, _old_ modulo value is used! (Write to BPLxMOD is still
+> accepted, next time BPLxMOD value is needed it is used normally)
+
+The DMA channel has the address a cycle ahead of the fetch, so it reads the old
+pointer and writes back the old one plus the increment, and the write never
+reaches the register. The bus write now waits a cycle, and a DMA cycle to the
+same plane in the meantime takes it with it. The banks keep their single write
+port, so this costs almost nothing.
+
+The modulo rule was already there - `bpl1mod_bscan` is the modulo one cycle
+late and the adder uses that - but nothing checked it. Now something does.
+
+The test runs one bitplane in lores with the display DMA going and drops a
+write at a chosen point relative to a known fetch. Nine cases:
+
+    plain line: fetch at $89 08400, at $99 08401, at $a9 08402
+      write one cycle before the fetch is swallowed  008401  want 008401  OK
+      and the fetch after it carries on regardless   008402  want 008402  OK
+      write two cycles before the fetch takes        009000  want 009000  OK
+      write in a free cycle takes                    009000  want 009000  OK
+      BPL1MOD 4 written early adds two words         008416  want 008416  OK
+      BPL1MOD 8 one cycle before the add is not used 008416  want 008416  OK
+      and it is used on the line after               008418  want 008418  OK
+
+The last three are the rule in one line each: the old value is used, and the
+write was still accepted.
+
 ## Cost
 
-Whole Denise, Yosys ALM mapping for Cyclone V, as the two went in:
+Yosys ALM mapping for Cyclone V, as each piece went in.
+
+Whole Denise:
 
     before          ALUTs 4766 (~2383 ALM)  FFs 8158
     display window  ALUTs 4780 (~2390 ALM)  FFs 8184
     sprites         ALUTs 4792 (~2396 ALM)  FFs 8264
 
-Thirteen ALMs and a hundred and six flip-flops for both, on a device with
-41910 ALMs. The sprite flip-flops are eight sprites' worth.
+Bitplane DMA:
+
+    before          ALUTs  708 (~ 354 ALM)  FFs  416  MLAB 40
+    pointer delay   ALUTs  732 (~ 366 ALM)  FFs  472  MLAB 40
+
+Twenty-five ALMs and a hundred and sixty flip-flops for all three, on a device
+with 41910 ALMs. The sprite flip-flops are eight sprites' worth. Writing the
+pointer banks per plane instead would have cost 273 ALMs and thrown away the
+40 distributed-memory blocks they infer, which is why the write waits for the
+port rather than getting one of its own.

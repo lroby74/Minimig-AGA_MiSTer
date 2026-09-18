@@ -96,7 +96,8 @@ and readable CAAR/MSP/ISP. AmigaOS therefore identifies the CPU as a 68030 and d
 caches through the normal `CacheControl()` path. There is no MMU and no FPU, so MMU tools
 (MuForce, Enforcer, 68030.library setups) and FPU code will not run.
 
-Effective speed is selectable, with the WinUAE 68030 clocks as the reference points.
+The CPU clock is selectable - 25, 40 and 50 MHz, the speeds real 68030 accelerator
+cards were sold at.
 The pipeline is paced by a fractional clock enable (one enable every D sysclk):
 
 | setting | D | effective |
