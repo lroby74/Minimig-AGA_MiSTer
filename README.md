@@ -96,10 +96,28 @@ and readable CAAR/MSP/ISP. AmigaOS therefore identifies the CPU as a 68030 and d
 caches through the normal `CacheControl()` path. There is no MMU and no FPU, so MMU tools
 (MuForce, Enforcer, 68030.library setups) and FPU code will not run.
 
-The CPU type is sent by the HPS in the two low bits of the cpu config byte:
-`00`=68000, `01`=68010, `10`=68030, `11`=68020. Selecting 68030 in the OSD needs the
-corresponding entry in Main_MiSTer's minimig CPU menu (the slot for code `10`, currently
-displayed as `-----`).
+Effective speed is selectable, with the WinUAE 68030 clocks as the reference points.
+The pipeline is paced by a fractional clock enable (one enable every D sysclk):
+
+| setting | D | effective |
+|---|---|---|
+| `00` | 2.725 | 25 MHz |
+| `01` | 1.704 | 40 MHz |
+| `10` | 1.363 | 50 MHz |
+| `11` | 1 | unthrottled (~68 MHz) |
+
+D comes from the same measurement the 68020 stock-speed throttle was calibrated
+against in #233: the unthrottled pipeline runs at 4.8x an A1200 68EC020 and is linear
+in D, so D = 68.14 / target MHz. Per-instruction error against real silicon is about
++/-10%, because the core's cycle counts are not a 68030's, and only the pipeline is
+paced - chip RAM and custom registers stay on the 7 MHz bus, so chipset-bound code
+does not scale with this setting.
+
+The cpu config byte from the HPS is now `SSPCCCTT`: `TT` the CPU type
+(`00`=68000, `01`=68010, `10`=68030, `11`=68020), `CCC` the cache config, `P` the
+68020 stock-speed throttle, `SS` the 68030 speed above. Selecting 68030 in the OSD
+needs the corresponding entry in Main_MiSTer's minimig CPU menu (the slot for code
+`10`, currently displayed as `-----`) plus the two speed bits.
 
 ### IDE and CDROM
 By default up to 2 IDE devices are supported. For Secondary Master/Slave devices, you have to install either IDEFix97 (shareware, WB3.1/3.9) or AtapiMagic (freeware, WB 3.1.4/3.2).

@@ -33,7 +33,7 @@ module cpu_wrapper
 	input             ph1,
 	input             ph2,
 
-	input       [2:0] cpucfg,
+	input       [4:0] cpucfg,
 	input       [2:0] fastramcfg,
 	input       [2:0] cachecfg,
 	input             bootrom,
@@ -306,7 +306,8 @@ always @(posedge clk) begin
 	end
 end
 
-wire stock_speed   = cpucfg[2];
+wire cpu030        = (cpucfg[1:0] == 2'b10);
+wire stock_speed   = cpucfg[2] & ~cpu030;
 wire clkena_p_base = ~cpu_req | chipready | ramready | fastchip_ready;
 
 reg [3:0] cooldown;
@@ -315,7 +316,32 @@ always @(posedge clk) begin
 	else if (cooldown != 4'd0)                 cooldown <= cooldown - 4'd1;
 	else if (stock_speed & clkena_p_base)      cooldown <= 4'd4;
 end
-wire clkena_p_throttled = clkena_p_base & (cooldown == 4'd0);
+
+// 68030 speed: one clkena every D sysclk, D = 4096/rate. The unthrottled pipeline
+// measures 4.8x an A1200 68EC020 and is linear in D (#233), so D = 68.14/MHz.
+reg [11:0] rate;
+always @* case({cpu030, cpucfg[4:3]})
+	3'b100:  rate = 12'd1503; // 25MHz -> D 2.725
+	3'b101:  rate = 12'd2404; // 40MHz -> D 1.704
+	3'b110:  rate = 12'd3005; // 50MHz -> D 1.363
+	default: rate = 12'd0;    // unthrottled
+endcase
+
+reg [12:0] acc;
+reg        credit;
+always @(posedge clk) begin
+	if (~reset) begin
+		acc    <= 0;
+		credit <= 1;
+	end
+	else begin
+		acc <= {1'b0, acc[11:0]} + rate;
+		if (acc[12])                 credit <= 1;
+		else if (clkena_p_throttled) credit <= 0;
+	end
+end
+
+wire clkena_p_throttled = clkena_p_base & (cooldown == 4'd0) & (credit | ~|rate);
 
 reg       chipreq;
 reg [2:0] cpu_ipl;
