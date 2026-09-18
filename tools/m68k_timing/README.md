@@ -9,6 +9,7 @@ Motorola/Freescale **MC68030 User's Manual**, part 2
 
     python3 extract.py MC68020UM.pdf > sec8.txt
     python3 parse_68020.py sec8.txt > m68020_timing.csv
+    python3 parse_move_020.py MC68020UM.pdf > m68020_move.csv
 
 The 68020 numbers come from section 8 of the **MC68020/MC68EC020 User's
 Manual** (`https://www.nxp.com/docs/en/data-sheet/MC68020UM.pdf`), 767 rows
@@ -70,10 +71,13 @@ addressing modes. The per-instruction tables (11.6.6 - 11.6.18) come out clean.
 Both report their coverage on stderr and name every row they could not find,
 so a gap is visible rather than silent.
 
-**The instruction ROM** is indexed by `{opcode[15:6], opcode[5:3]}` - 8192
-entries of 20 bits, 16 M10K. Those thirteen bits are what the timing turns on:
-`opcode[2:0]` is always a register number, except through mode 7 where it picks
-the addressing mode, and that goes to the effective-address ROM instead.
+**The instruction ROM** is indexed by fourteen bits - `{opcode[15:6], 1,
+opcode[2:0]}` through mode 7 and `{opcode[15:6], 0, opcode[5:3]}` otherwise -
+16384 entries of 20 bits. `opcode[2:0]` is a register number and never changes
+a time, except under mode 7 where it picks the addressing mode and sometimes
+the instruction, so mode 7 gets its own half. `collisions()` walks all eight
+low values of every slot and reports any that disagree, so that claim is
+checked rather than trusted.
 
     [19] valid  [18:16] ea_class  [15:14] tail  [13:9] head  [8:1] cc
 
@@ -97,21 +101,19 @@ and then charges `cc - min(head, tail_of_previous_instruction)` clocks.
 
 | ROM | state |
 |---|---|
-| 68030 instructions | 7601 of 8192 slots on a table row (92.8%), no unresolved rows |
+| 68030 instructions | 15203 of 16384 slots on a table row (92.8%), no unresolved rows |
 | 68030 effective addresses | every row resolves - no gaps |
-| 68020 instructions | 58%: the 68020 manual names the same forms differently and its MOVE table is a matrix |
+| 68020 instructions | 12419 of 16384 (75.8%); everything still open is MOVE |
+| 68020 MOVE | the whole 23 x 22 matrix, 506 cells, best/cache/worst |
+
+The 1181 slots neither CPU covers are opcodes `decode.py` does not map: the
+coprocessor and MMU space, and encodings TG68K does not implement.
 
 ### What is still open
 
 * **The full-format addressing modes.** The memory-indirect forms of every
   effective-address table are still on the text extraction rather than
   transcribed. TG68K's support for them is partial anyway.
-* **The 68020 label aliases.** Its tables call the same form by another name -
-  `ADD Rn,Dn` is `ADD EA,Dn` there, `MULU.W` is `MUL.W`, `TST Dn`/`TST Mem` is
-  one `TST EA` row, the shifts are spelled out per direction. A per-CPU alias
-  map closes this.
-* **The 68020 MOVE table** is a 414-cell source-by-destination matrix. A
-  line-based parse cannot read it; it needs a coordinate-aware pass.
 * **MOVEM** costs 4+2n clocks with n in the extension word, and **DIVS.L vs
   DIVU.L** is decided by the extension word too. Neither is in the ROM index.
   MOVEM is left to the fallback; a signed long divide is charged 12 clocks light.
@@ -208,3 +210,70 @@ cannot take. The 68020's jump table carries the same values in the same order
 - 2, 4, 2, 2, 6 - and labels those rows `(An)` and `(d16,An)`. That is what
 they are, on the strength of a second document rather than a guess, and it is
 how `JSR (A0)` came to be charged 6 clocks instead of falling back to 2.
+
+## Why the 68020 mode is not on these tables
+
+The tables are extracted and complete, and the 68020 mode still runs on the
+averaged divider. The reason is one missing column.
+
+Equation 11-1 needs two numbers per instruction: a head, and a tail. The 68030
+manual prints both. The 68020 manual prints a best, a cache and a worst case,
+and defines the best case as the instruction in cache "and benefiting from
+maximum overlap due to other instructions" (section 8.2), so cache minus best
+is a head. **There is no tail.** What an instruction leaves for its successor
+is never stated anywhere in section 8, and section 8.1.5 shows it is real and
+it varies: the same four instructions come out 6/0/9/1 at one alignment and
+4/3/6/3 at another.
+
+Nor are the two manuals' heads the same quantity:
+
+    python3 compare_020_030.py
+
+    head: the 68030 head and the 68020 cache-minus-best agree on 76 of 235
+          shared forms (32%)
+          68030 head reaches 20; 68020 cache-minus-best reaches 6
+          the 68030 lets 62 of these forms be absorbed whole; the 68020's best
+          case is bounded by what a real predecessor offers, so it never says
+          that
+
+    tail: 68030 {0: 519, 1: 32, 2: 11}, 68020 not published
+
+So the 68030's tails cannot be borrowed for the 68020. Charging every 68020
+instruction its cache case with nothing taken off is the only reading the
+manual supports, and that costs:
+
+    python3 compare_020_030.py trace.txt
+    1000 instructions: 5634 clocks with the tails, 5776 without (+2.52%)
+
+2.5% on a mixed stream. But the manual's own Example 3 - two register
+operations between two memory MOVEs, cache enabled, no wait states - sums to
+15 clocks that way against the 12 Table 8-1 gives it. Amiga code that moves
+memory around lives at that end, and 25% is not a faithful 68EC020.
+
+The same tables would also be the wrong tables for a stock A1200. They assume
+a 32-bit bus with no wait states; an unexpanded A1200 has 2 MB of chip RAM on
+a 16-bit bus, and the chip bus, which Minimig already models, is what decides
+the timing there rather than the instruction.
+
+If a tail column for the 68020 ever turns up - a Motorola errata, an
+application note, measurements off real silicon - the mode is one generator
+run away. Everything else it needs is in `m68020_timing.csv` and
+`m68020_move.csv`.
+
+## The 68020 MOVE matrix
+
+The 68030 tabulates MOVE by destination, with one row for a register source
+and one for everything else, and leaves the source addressing cost to the
+fetch-effective-address table. The 68020 does not: section 8.2.6 is a full
+source-by-destination matrix, 23 sources against 22 destinations, and each
+cell already contains both effective address calculations. `parse_move_020.py`
+reads it off the page coordinates - the text layer keeps the cells but not the
+grid - and assigns every cell to the destination whose heading it sits closest
+to. All 506 cells resolve in all three cases.
+
+One printing slip: the first page of each case, 8-21, 8-23 and 8-26, prints the
+nineteenth source row as `([d16,B],d32)`, where the continuation pages of all
+three cases print `([d16,B],I,d32)`. The rows around it run `([B],I)`,
+`([B],I,d16)`, `([B],I,d32)`, `([d16,B],I)`, `([d16,B],I,d16)`, _,
+`([d32,B],I)`, so the index is dropped in printing on one page rather than
+there being a twenty-fourth row. The parser says so where it corrects it.

@@ -43,6 +43,53 @@ import csv, sys, os, re, io
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# --------------------------------------------------------------------------
+# The two manuals name the same instruction forms differently
+# --------------------------------------------------------------------------
+# decode.py speaks the 68030 manual's names, because that is the table the RTL
+# is built from. The 68020 manual, written four years earlier, spells a good
+# part of its section 8 differently: it folds the register-source and the
+# memory-source rows of an arithmetic instruction into one EA row, drops the
+# signedness of a word multiply, gives the shifts one row per direction rather
+# than one per family, and calls the status register PSW. Nothing here changes
+# a number - each entry just says which 68020 row is the same form as a 68030
+# row, so the same decoder can read both tables.
+ALIAS_020 = {
+    'arith': {
+        'ADD Rn,Dn': 'ADD EA,Dn', 'AND Dn,Dn': 'AND EA,Dn', 'OR Dn,Dn': 'OR EA,Dn',
+        'SUB Rn,Dn': 'SUB EA,Dn', 'CMP Rn,Dn': 'CMP EA,Dn', 'EOR Dn,EA': 'EOR Dn,Mem',
+        'ADD.W EA,An': 'ADDA EA,An', 'ADDA.L EA,An': 'ADDA EA,An',
+        'ADDA.W Rn,An': 'ADDA EA,An', 'ADDA.L Rn,An': 'ADDA EA,An',
+        'SUBA.W EA,An': 'SUBA EA,An', 'SUBA.L EA,An': 'SUBA EA,An',
+        'SUBA.W Rn,An': 'SUBA EA,An', 'SUBA.L Rn,An': 'SUBA EA,An',
+        'CMPA Rn,An': 'CMPA EA,An',
+        'MULU.W EA,Dn': 'MUL.W EA,Dn', 'MULS.W EA,Dn': 'MUL.W EA,Dn',
+        'MULU.L EA,Dn': 'MUL.L EA,Dn', 'MULS.L EA,Dn': 'MUL.L EA,Dn',
+        'DIVU.W Dn,Dn': 'DIVU.W EA,Dn', 'DIVS.W Dn,Dn': 'DIVS.W EA,Dn',
+        'DIVU.L Dn,Dn': 'DIVU.L EA,Dn', 'DIVS.L Dn,Dn': 'DIVS.L EA,Dn',
+    },
+    'shift': {
+        'LSd #<data>,Dy': 'LSL Dn (Static)', 'LSd Dx,Dy': 'LSL Dn (Dynamic)',
+        'LSd Mem by 1': 'LSL Mem by 1',
+        'ASL #<data>,Dy': 'ASL Dn', 'ASL Dx,Dy': 'ASL Dn',
+        'ASR #<data>,Dy': 'ASR Dn', 'ASR Dx,Dy': 'ASR Dn',
+        'ROd #<data>,Dy': 'ROL Dn', 'ROd Dx,Dy': 'ROL Dn', 'ROd Mem by 1': 'ROL Mem by 1',
+        'ROXd Dn': 'ROXL Dn',
+    },
+    'single':   {'TST Dn': 'TST EA', 'TST Mem': 'TST EA'},
+    'immarith': {'CMPI #<data>,Dn': 'CMPI #<data>,EA', 'CMPI #<data>,Mem': 'CMPI #<data>,EA'},
+    'ctrl':     {'CHK EA,Dn (No Exception)': 'CHK', 'CHK Dn,Dn (No Exception)': 'CHK'},
+    'bcd':      {'SUBX -(An)': 'SUBX -(An),-(An)'},
+    'spmove': {
+        'MOVE SR,Dn': 'MOVE PSW,Rn', 'MOVE CCR,Dn': 'MOVE PSW,Rn',
+        'MOVE SR,Mem': 'MOVE PSW,Mem', 'MOVE CCR,Mem': 'MOVE PSW,Mem',
+        'MOVE Dn,CCR': 'MOVE EA,CCR', 'SWAP Dn': 'SWAP Rx,Ry',
+        'MOVE USP,An': 'MOVE USP', 'MOVE An,USP': 'MOVE USP',
+        'MOVEC Rn,Cr-A': 'MOVEC Rn,Cr', 'MOVEC Rn,Cr-B': 'MOVEC Rn,Cr',
+    },
+}
+
+
 class Table:
     def __init__(self, cpu):
         self.cpu = cpu
@@ -78,9 +125,14 @@ class Table:
                    r'brief format extension word|full format extension word\(s\))\s+', '', s)
         return s.strip()
 
+    def key(self, section, label):
+        if self.cpu == '68020':
+            label = ALIAS_020.get(section, {}).get(label, label)
+        return (section, self.norm(label))
+
     def get(self, section, label):
         """(cc, head, tail) for one table row, or raise if the row is missing."""
-        key = (section, self.norm(label))
+        key = self.key(section, label)
         r = self.rows.get(key)
         if r is None:
             raise KeyError(f'{self.cpu}: no row {key!r}')
@@ -95,7 +147,7 @@ class Table:
         return cc, max(0, cc - best), max(0, cc - best)
 
     def has(self, section, label):
-        return (section, self.norm(label)) in self.rows
+        return self.key(section, label) in self.rows
 
 
 # --------------------------------------------------------------------------
