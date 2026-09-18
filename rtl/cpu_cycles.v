@@ -29,6 +29,7 @@ module cpu_cycles
 
 	input             opc_start,    // one clkena as an instruction begins
 	input      [15:0] opc,
+	input             opc_cond,     // condition of the instruction before it
 	input             cpu_ena,      // the enable the CPU is actually getting
 
 	output            hold          // hold the CPU: it has not paid for the last one
@@ -100,6 +101,16 @@ wire [1:0] ea_t  = ea_v ? ea_e[2:1]  : 2'd0;
 wire       ea_ph = ea_v & ea_e[0];
 wire       model = op_e[19] & (~|eacl | ea_e[15]);
 
+// A conditional branch with a byte displacement costs 4 clocks when it is not
+// taken and 6 when it is, and the tables hold the taken figure. Which it will
+// be is not known when the charge is made - the CPU is held and has not run
+// the branch yet - so the not-taken figure is charged and the two clocks are
+// added at the next instruction's start, where exe_condition has settled on
+// this branch's outcome. A word or long displacement is 6 either way, and BRA
+// and BSR are always taken, so neither is touched.
+wire bcc_b = (opc_l[15:12] == 4'h6) && (opc_l[11:8] > 4'h1)
+          && (opc_l[7:0] != 8'h00) && (opc_l[7:0] != 8'hFF);
+
 wire [4:0] ov1  = (op_h < {3'b0, ea_t}) ? op_h : {3'b0, ea_t};
 wire [8:0] cc   = {1'b0, op_cc} + {2'b0, ea_cc} - {4'b0, ov1};
 wire [5:0] head = ea_v ? ({1'b0, ea_h} + (ea_ph ? {1'b0, op_h} : 6'd0)) : {1'b0, op_h};
@@ -108,7 +119,10 @@ wire [5:0] ov2  = (head < {4'b0, prev_t}) ? head : {4'b0, prev_t};
 // manual says outright that a net of zero is possible, so nothing is clamped
 // here. The two-clock floor is only for a form with no table row behind it.
 wire [8:0] net  = cc - {3'b0, ov2};
-wire [8:0] cost = model ? net : 9'd2;
+wire [8:0] cost = model ? (bcc_b ? net - 9'd2 : net) : 9'd2;
+// what this instruction owes: its own cost, plus the two clocks a taken byte
+// branch before it turned out to need
+wire [8:0] due  = cost + (bcc_add ? 9'd2 : 9'd0);
 
 // The two ROM reads take three clocks and the CPU is held through them, so
 // those clocks would land on top of every instruction. They do not: whatever
@@ -119,21 +133,31 @@ reg [12:0] acc;
 reg  [8:0] debt;
 reg  [1:0] cred;
 reg  [1:0] prev_t;
+reg        bcc_pend;
+reg        bcc_add;
 wire       spend = acc[12];
 wire [8:0] pay   = {7'd0, cred} + {8'd0, spend};
 always @(posedge clk) begin
 	if (~reset) begin
-		acc    <= 0;
-		debt   <= 0;
-		cred   <= 0;
-		prev_t <= 0;
+		acc      <= 0;
+		debt     <= 0;
+		cred     <= 0;
+		prev_t   <= 0;
+		bcc_pend <= 0;
+		bcc_add  <= 0;
 	end
 	else begin
 		acc <= {1'b0, acc[11:0]} + rate;
+		if (opc_start & cpu_ena & run) begin
+			bcc_add  <= bcc_pend & opc_cond;   // the branch before was taken
+			bcc_pend <= 0;
+		end
 		if (st[2]) begin
-			debt   <= (cost > pay) ? cost[8:0] - pay : 9'd0;
-			cred   <= 0;
-			prev_t <= model ? op_t : 2'd0;
+			debt     <= (due > pay) ? due - pay : 9'd0;
+			cred     <= 0;
+			prev_t   <= model ? op_t : 2'd0;
+			bcc_pend <= model & bcc_b;
+			bcc_add  <= 0;
 		end
 		else if (|st) begin
 			if (spend & ~&cred) cred <= cred + 1'd1;

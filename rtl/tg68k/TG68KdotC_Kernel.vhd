@@ -142,7 +142,8 @@ entity TG68KdotC_Kernel is
 		D_CACHE_out				: out std_logic;
 		VBR_out					: out std_logic_vector(31 downto 0);
 		opc_start				: out std_logic;                      -- 1 for one clkena as an opcode starts
-		opc_out					: out std_logic_vector(15 downto 0)   -- the opcode starting
+		opc_out					: out std_logic_vector(15 downto 0);  -- the opcode starting
+		opc_cond				: out std_logic                       -- condition of the one before it
 		);
 end TG68KdotC_Kernel;
 
@@ -4084,6 +4085,9 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
   -- that same clkena, so the two line up on the instruction being started.
   opc_start <= '1' when decodeOPC = '1' else '0';
   opc_out   <= opcode;
+  -- exe_opcode still holds the previous instruction when decodeOPC is high,
+  -- so exe_condition reads as that instruction's outcome at that moment.
+  opc_cond  <= exe_condition;
 -----------------------------------------------------------------------------
 -- Conditions
 -----------------------------------------------------------------------------

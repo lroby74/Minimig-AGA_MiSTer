@@ -5,11 +5,12 @@ reg clk = 0, reset = 0, ntsc = 0, ena = 1;
 reg  [1:0] speed = 2'b00;             // 25MHz
 reg [15:0] opc;
 reg        opc_start = 0;
+reg        opc_cond  = 0;
 wire       hold;
 wire       cpu_ena = ~hold;
 
 cpu_cycles dut (.clk(clk), .reset(reset), .ntsc(ntsc), .ena(ena), .speed(speed),
-                .opc_start(opc_start), .opc(opc), .cpu_ena(cpu_ena), .hold(hold));
+                .opc_start(opc_start), .opc(opc), .opc_cond(opc_cond), .cpu_ena(cpu_ena), .hold(hold));
 
 always #5 clk = ~clk;
 
@@ -69,6 +70,20 @@ initial begin
 	// same two without the overlap, each after a zero-tail instruction
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'hD289); issue(16'hD289); n=n+2; end end_run;
 	report("ADD.L A1,D1 x2 (no tail)", 2.0);
+
+	// Bcc.B: 4 clocks when not taken, 6 when taken. opc_cond carries the
+	// outcome of the instruction before, so it is set for the taken case.
+	opc_cond = 0;
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h6604); n=n+1; end end_run;
+	report("Bcc.B not taken", 4.0);
+
+	opc_cond = 1;
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h6604); n=n+1; end end_run;
+	report("Bcc.B taken", 6.0);
+
+	opc_cond = 0;
+	start_run; for (i=0;i<500;i=i+1) begin issue(16'h6600); n=n+1; end end_run;
+	report("Bcc.W (6 either way)", 6.0);
 
 	speed = 2'b10; RATE = 1804.0;       // 50MHz
 	start_run; for (i=0;i<500;i=i+1) begin issue(16'h4E71); n=n+1; end end_run;
