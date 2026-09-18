@@ -8,10 +8,31 @@ bits never leave the board. One commit fixes all three.
 
 ## Building it
 
+This is not a core. It is the Linux program that runs on the board's ARM side,
+so there is no Quartus in it: it wants a cross compiler that runs on a PC and
+emits ARM code, and it produces one executable called `MiSTer` that replaces
+`/media/fat/MiSTer`. It takes a couple of minutes rather than the best part of
+an hour.
+
+The Makefile's own comment names the compiler it expects, and the version
+matters - a modern GCC stops on two things in code that has nothing to do with
+Minimig: `scaler.cpp` repeats a default argument, and `input.cpp` reads
+`input_event.time`, which the 64-bit time_t headers replaced. So use the one it
+asks for, ARM's own 10.2 release:
+
+    curl -LO https://developer.arm.com/-/media/Files/downloads/gnu-a/10.2-2020.11/binrel/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf.tar.xz
+    tar xf gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf.tar.xz
+    export PATH=$PWD/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/bin:$PATH
+
     git clone https://github.com/lroby74/Main_MiSTer
     cd Main_MiSTer
     git checkout claude/model-opus-lrhvk4
     make
+
+`bin/MiSTer` is the result: a stripped 32-bit ARM executable of about 1.2MB.
+Back up the `MiSTer` already on the card before replacing it - if the new one
+will not start, the board does not reach the menu - and keep the backup, because
+the updater writes over it at the next update.
 
 The CPU line then cycles through eight settings instead of four:
 
