@@ -5,7 +5,7 @@
 module tb_akiko_hps_bridge;
 
 initial begin
-	#500000 $fatal(1, "tb_akiko_hps_bridge: watchdog timeout");
+	#20000000 $fatal(1, "tb_akiko_hps_bridge: watchdog timeout");
 end
 
 logic clk = 0;
@@ -28,6 +28,7 @@ wire [23:0] dma_baddr;
 wire  [7:0] dma_wbyte;
 logic [7:0] dma_rbyte;
 logic       dma_ack;
+logic       dma_arm;
 
 wire        hps_cmd_pending;
 wire  [7:0] hps_cmd_byte;
@@ -61,14 +62,14 @@ always @(posedge clk) begin
 end
 
 akiko #(.NATIVE_CD32(1)) u_dut (
-	.clk(clk), .reset(reset),
+	.clk(clk), .reset(reset), .cd_speed(2'b11), .ntsc(1'b0),
 	.cs(cs), .rd(rd), .wr(wr),
 	.lds(lds), .uds(uds),
 	.addr(addr), .din(din), .dout(dout),
 	.akiko_irq(irq),
 	.dma_req(dma_req), .dma_we(dma_we),
 	.dma_baddr(dma_baddr), .dma_wbyte(dma_wbyte),
-	.dma_rbyte(dma_rbyte), .dma_ack(dma_ack),
+	.dma_rbyte(dma_rbyte), .dma_ack(dma_ack), .dma_arm(dma_arm),
 	.hps_cmd_pending(hps_cmd_pending),
 	.hps_cmd_byte(hps_cmd_byte),
 	.hps_cmd_pop(hps_cmd_pop),
@@ -81,12 +82,13 @@ akiko #(.NATIVE_CD32(1)) u_dut (
 	.hps_rx_busy(),
 	.hps_nvr_addr(10'd0),
 	.hps_nvr_dout(), .hps_nvr_clear_dirty(1'b0), .hps_nvr_dirty(),
-	.nvr_load_addr(10'd0), .nvr_load_din(8'h00), .nvr_load_we(1'b0)
+	.nvr_load_addr(10'd0), .nvr_load_din(8'h00), .nvr_load_we(1'b0),
+	.hps_subcode_push(1'b0), .hps_subcode_byte(8'h00), .hps_subcode_done(1'b0)
 );
 
 akiko_hps_bridge u_bridge (
 	.clk(clk), .reset(reset),
-	.uio_cs(uio_cs), .uio_cs_sec(1'b0), .uio_cs_nvr(uio_cs_nvr),
+	.uio_cs(uio_cs), .uio_cs_sec(1'b0), .uio_cs_nvr(uio_cs_nvr), .uio_cs_subcode(1'b0),
 	.uio_wr(uio_wr), .uio_rd(uio_rd),
 	.uio_din(uio_din), .uio_dout(uio_dout),
 	.cmd_pending(hps_cmd_pending), .cmd_byte(hps_cmd_byte),
@@ -95,6 +97,7 @@ akiko_hps_bridge u_bridge (
 	.result_done(hps_result_done),
 	.sec_req(1'b0), .sec_status(8'h00),
 	.sec_push(), .sec_word(), .sec_done(),
+	.subcode_push(), .subcode_byte(), .subcode_done(),
 	.nvr_addr(nvr_addr_w), .nvr_dout(nvr_dout_drv),
 	.nvr_load_din(nvr_din_w), .nvr_load_we(nvr_we_w),
 	.nvr_clear_dirty(nvr_clear_dirty_w), .nvr_done(nvr_done_w),
@@ -169,12 +172,14 @@ logic       bfm_in_xfer = 1'b0;
 
 initial begin
 	dma_ack   = 0;
+	dma_arm   = 0;
 	dma_rbyte = 8'h00;
 	for (int i = 0; i < 65536; i++) mem[i] = 8'h00;
 end
 
 always @(posedge clk) begin
 	dma_ack <= 0;
+	dma_arm <= 0;
 	if (bfm_in_xfer) begin
 		if (dma_we) mem[dma_baddr[15:0]] <= dma_wbyte;
 		else        dma_rbyte <= mem[dma_baddr[15:0]];
@@ -182,6 +187,7 @@ always @(posedge clk) begin
 		bfm_in_xfer <= 1'b0;
 	end else if (dma_req && !dma_ack) begin
 		bfm_in_xfer <= 1'b1;
+		dma_arm     <= 1'b1;
 	end
 end
 
@@ -270,7 +276,7 @@ initial begin
 	$display("tb_akiko_hps_bridge starting");
 	@(posedge clk);
 	do_reset();
-	bus_write_long(5'b00100, 32'hFF000000);
+	bus_write_long(5'b00100, 32'hF7000000);
 
 	$display("--- Test A: cmd 0x05 LED frames as 3 bytes ---");
 	set_misc_base(24'h010000);
@@ -281,7 +287,7 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd3);
-	wait_cmd_pending(200, cyc);
+	wait_cmd_pending(60000, cyc);
 	check8 ("A.cmdlen",    8'd3, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check_bit("A.pending", 1'b1, hps_cmd_pending);
 	check_bit("A.uio_req", 1'b1, uio_req);
@@ -317,7 +323,7 @@ initial begin
 	check8("C.buf[3]",  8'hEF, u_dut.g_cd.cdrom_result_buffer[3]);
 
 	$display("--- Test D: RX engine drains response ---");
-	wait_rx_done(200, cyc);
+	wait_rx_done(20000, cyc);
 	check8("D.mem[0]", 8'hDE, mem[16'h0000]);
 	check8("D.mem[1]", 8'hAD, mem[16'h0001]);
 	check8("D.mem[2]", 8'hBE, mem[16'h0002]);
@@ -328,7 +334,7 @@ initial begin
 
 	$display("--- Test E: cmd 0x04 frames at 13 bytes ---");
 	do_reset();
-	bus_write_long(5'b00100, 32'hFF000000);
+	bus_write_long(5'b00100, 32'hF7000000);
 	set_misc_base(24'h030000);
 	mem[16'h0200] = 8'h04;
 	for (int i = 1; i <= 11; i++) mem[16'h0200 + i] = i[7:0];
@@ -337,17 +343,17 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd6);
-	repeat (60) @(posedge clk);
+	repeat (6000) @(posedge clk);
 	check8 ("E1.cmdlen_partial", 8'd6, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check_bit("E1.pending_low",  1'b0, hps_cmd_pending);
 	write_txcmp(8'd13);
-	wait_cmd_pending(200, cyc);
+	wait_cmd_pending(60000, cyc);
 	check8 ("E2.cmdlen_full", 8'd13, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check_bit("E2.pending",   1'b1, hps_cmd_pending);
 
 	$display("--- Test F: cmd 0x07 INFO frames at 2 bytes ---");
 	do_reset();
-	bus_write_long(5'b00100, 32'hFF000000);
+	bus_write_long(5'b00100, 32'hF7000000);
 	set_misc_base(24'h040000);
 	mem[16'h0200] = 8'h07;
 	mem[16'h0201] = 8'hF8;
@@ -355,7 +361,7 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd2);
-	wait_cmd_pending(200, cyc);
+	wait_cmd_pending(60000, cyc);
 	check8 ("F.cmdlen", 8'd2, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check_bit("F.pending", 1'b1, hps_cmd_pending);
 
@@ -368,7 +374,18 @@ initial begin
 	mem[16'h0202] = 8'h07;
 	mem[16'h0203] = 8'hF8;
 	write_txcmp(8'd4);
-	wait_cmd_pending(200, cyc);
+	repeat (40000) @(posedge clk);
+	check_bit("G.held_for_reply", 1'b0, hps_cmd_pending);
+	check8 ("G.cmdlen_held",  8'd0, {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("G.txinx_fetched", 8'd4, u_dut.g_cd.cdcomtxinx);
+	set_config(CFG_TXD | CFG_RXD);
+	write_rxcmp(8'd2);
+	uio_begin_write();
+	uio_write_byte(8'h07);
+	uio_write_byte(8'h01);
+	uio_end();
+	wait_rx_done(20000, cyc);
+	wait_cmd_pending(60000, cyc);
 	check8 ("G.cmdlen2", 8'd2, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check_bit("G.pending2", 1'b1, hps_cmd_pending);
 	uio_begin_read();
@@ -377,22 +394,20 @@ initial begin
 	uio_end();
 	check_bit("G.s.pending_clear", 1'b0, hps_cmd_pending);
 
-	$display("--- Test H: unknown opcode frames at buffer-full ---");
+	$display("--- Test H: an unknown opcode is one byte, the rest waits in the drive's FIFO ---");
 	do_reset();
-	bus_write_long(5'b00100, 32'hFF000000);
+	bus_write_long(5'b00100, 32'hF7000000);
 	set_misc_base(24'h050000);
 	for (int i = 0; i < 32; i++) mem[16'h0200 + i] = 8'h0B;
 	u_dut.g_cd.cdrom_command_length = 6'd0;
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd16);
-	repeat (250) @(posedge clk);
-	check_bit("H.pending_partial", 1'b0, hps_cmd_pending);
-	check8 ("H.cmdlen_partial", 8'd16, {2'h0, u_dut.g_cd.cdrom_command_length});
-	write_txcmp(8'd32);
-	wait_cmd_pending(2000, cyc);
-	check_bit("H.pending_full", 1'b1, hps_cmd_pending);
-	check8 ("H.cmdlen_full", 8'd32, {2'h0, u_dut.g_cd.cdrom_command_length});
+	wait_cmd_pending(60000, cyc);
+	check_bit("H.pending", 1'b1, hps_cmd_pending);
+	check8 ("H.cmdlen",  8'd1,  {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("H.txinx",   8'd16, u_dut.g_cd.cdcomtxinx);
+	check8 ("H.fifo",    8'd15, u_dut.g_cd.tx_fifo_wr - u_dut.g_cd.tx_fifo_rd);
 
 	$display("--- Test I: Phase 32.5 NVR sub-channel — write burst protocol ---");
 	begin
@@ -406,18 +421,18 @@ initial begin
 		@(posedge clk);
 		check_bit("I.nvr_addr_reset_pre", 1'b0, |nvr_addr_w);
 
-		@(posedge clk); uio_wr <= 1; uio_din <= 16'hADDE;
+		@(posedge clk); uio_wr <= 1; uio_din <= 16'hADDE; #1;
 		check_bit("I.nvr_lo_we",   1'b1, nvr_we_w);
 		check8   ("I.nvr_lo_din",  8'hDE, nvr_din_w);
-		@(posedge clk); uio_wr <= 0;
+		@(posedge clk); uio_wr <= 0; #1;
 		check_bit("I.nvr_hi_we",   1'b1, nvr_we_w);
 		check8   ("I.nvr_hi_din",  8'hAD, nvr_din_w);
-		@(posedge clk);
+		@(posedge clk); #1;
 		check_bit("I.nvr_addr_post0", 1'b1, nvr_addr_w == 10'd2);
 
 		@(posedge clk); uio_wr <= 1; uio_din <= 16'hEFBE;
 		@(posedge clk); uio_wr <= 0;
-		@(posedge clk);
+		@(posedge clk); #1;
 		check_bit("I.nvr_addr_post1", 1'b1, nvr_addr_w == 10'd4);
 
 		check_bit("I.no_clear_during_write", 1'b0, nvr_clear_dirty_seen);

@@ -23,7 +23,7 @@ wire [15:0] sec_word_w;
 wire        sec_done_w;
 
 akiko #(.NATIVE_CD32(1)) u_dut (
-	.clk(clk), .reset(reset),
+	.clk(clk), .reset(reset), .cd_speed(2'b11), .ntsc(1'b0),
 	.cs(1'b0), .rd(1'b0), .wr(1'b0),
 	.lds(1'b0), .uds(1'b0),
 	.addr(5'd0), .din(16'h0000), .dout(),

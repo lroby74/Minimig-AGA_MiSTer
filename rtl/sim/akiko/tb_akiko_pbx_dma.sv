@@ -38,7 +38,7 @@ logic       hps_sec_done = 0;
 
 
 akiko #(.NATIVE_CD32(1)) u_dut (
-	.clk(clk), .reset(reset),
+	.clk(clk), .reset(reset), .cd_speed(2'b11), .ntsc(1'b0),
 	.cs(cs), .rd(rd), .wr(wr),
 	.lds(lds), .uds(uds),
 	.addr(addr), .din(din), .dout(dout),
@@ -369,7 +369,7 @@ initial begin
 	$display("    F.post-rxcmp: reclen=%0d rxcmp=%0d delay=%0d",
 	         u_dut.g_cd.cdrom_receive_length, u_dut.g_cd.cdcomrxcmp,
 	         u_dut.g_cd.rx_dma_delay);
-	wait_rx_done(2000, cyc);
+	wait_rx_done(20000, cyc);
 	$display("    F: RX done in %0d cycles  rxinx=%0d reclen=%0d mem2000=%02h",
 	         cyc, u_dut.g_cd.cdcomrxinx, u_dut.g_cd.cdrom_receive_length, mem['h02000]);
 	check8("F.mem_rx0", 8'hCA, mem['h02000]);

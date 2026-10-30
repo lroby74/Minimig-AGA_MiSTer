@@ -16,11 +16,13 @@ vmap work work
 # Bench needs to be updated to current akiko.v port list before this passes.
 vlog -quiet C:/intelFPGA_lite/17.0/quartus/eda/sim_lib/altera_mf.v
 vlog -sv -quiet akiko_legacy_ref.v
+vlog -sv -quiet ../system/sim_lib/dpram.sv
 vlog -sv -quiet ../../akiko_nvram.v
 vlog -sv -quiet ../../akiko.v
 vlog -sv -quiet tb_akiko_regs.sv
 
-vsim -c -voptargs=+acc work.tb_akiko_regs
+vsim -c -onfinish stop -voptargs=+acc work.tb_akiko_regs
+onbreak {resume}
 run -all
 
 set num_errs [examine -value /tb_akiko_regs/errs]

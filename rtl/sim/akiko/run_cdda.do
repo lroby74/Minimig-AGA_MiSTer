@@ -9,7 +9,8 @@ vmap work work
 vlog -sv -quiet ../../cdda.v
 vlog -sv -quiet tb_akiko_cdda.sv
 
-vsim -c -voptargs=+acc work.tb_akiko_cdda
+vsim -c -onfinish stop -voptargs=+acc work.tb_akiko_cdda
+onbreak {resume}
 run -all
 
 set num_errs [examine -value /tb_akiko_cdda/errs]

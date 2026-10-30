@@ -5,7 +5,7 @@
 module tb_akiko_txrx_dma;
 
 initial begin
-	#500000 $fatal(1, "tb_akiko_txrx_dma: watchdog timeout");
+	#5000000 $fatal(1, "tb_akiko_txrx_dma: watchdog timeout");
 end
 
 logic clk = 0;
@@ -28,16 +28,17 @@ wire [23:0] dma_baddr;
 wire  [7:0] dma_wbyte;
 logic [7:0] dma_rbyte;
 logic       dma_ack;
+logic       dma_arm;
 
 akiko #(.NATIVE_CD32(1)) u_dut (
-	.clk(clk), .reset(reset),
+	.clk(clk), .reset(reset), .cd_speed(2'b11), .ntsc(1'b0),
 	.cs(cs), .rd(rd), .wr(wr),
 	.lds(lds), .uds(uds),
 	.addr(addr), .din(din), .dout(dout),
 	.akiko_irq(irq),
 	.dma_req(dma_req), .dma_we(dma_we),
 	.dma_baddr(dma_baddr), .dma_wbyte(dma_wbyte),
-	.dma_rbyte(dma_rbyte), .dma_ack(dma_ack),
+	.dma_rbyte(dma_rbyte), .dma_ack(dma_ack), .dma_arm(dma_arm),
 	.hps_cmd_pending(), .hps_cmd_byte(),
 	.hps_cmd_pop(1'b0), .hps_cmd_done(1'b0),
 	.hps_result_push(1'b0), .hps_result_byte(8'h00), .hps_result_done(1'b0),
@@ -112,12 +113,14 @@ logic  bfm_in_xfer     = 1'b0;
 
 initial begin
 	dma_ack   = 0;
+	dma_arm   = 0;
 	dma_rbyte = 8'h00;
 	for (int i = 0; i < 65536; i++) mem[i] = 8'h00;
 end
 
 always @(posedge clk) begin
 	dma_ack <= 0;
+	dma_arm <= 0;
 	if (bfm_in_xfer) begin
 		if (bfm_delay_cnt != 0) begin
 			bfm_delay_cnt <= bfm_delay_cnt - 1;
@@ -132,6 +135,7 @@ always @(posedge clk) begin
 		end
 	end else if (dma_req && !dma_ack) begin
 		bfm_in_xfer  <= 1'b1;
+		dma_arm     <= 1'b1;
 		bfm_delay_cnt <= bfm_extra_delay;
 	end
 end
@@ -174,6 +178,7 @@ begin
 		@(posedge clk);
 		n = n + 1;
 	end
+	repeat (8) @(posedge clk);
 	cycles = n;
 end
 endtask
@@ -210,13 +215,14 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd4);
-	wait_tx_done(200, cyc);
+	wait_tx_done(20000, cyc);
 	check8 ("A.cmd[0]",  8'hAB, u_dut.g_cd.cdrom_command_buffer[0]);
-	check8 ("A.cmd[1]",  8'hB2, u_dut.g_cd.cdrom_command_buffer[1]);
-	check8 ("A.cmd[2]",  8'hC3, u_dut.g_cd.cdrom_command_buffer[2]);
-	check8 ("A.cmd[3]",  8'hD4, u_dut.g_cd.cdrom_command_buffer[3]);
 	check8 ("A.txinx",   8'd4,  u_dut.g_cd.cdcomtxinx);
-	check8 ("A.cmdlen",  8'd4,  {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("A.cmdlen",  8'd1,  {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("A.fifo",    8'd3,  u_dut.g_cd.tx_fifo_wr - u_dut.g_cd.tx_fifo_rd);
+	check8 ("A.fifo[0]", 8'hB2, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0]]);
+	check8 ("A.fifo[1]", 8'hC3, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0] + 10'd1]);
+	check8 ("A.fifo[2]", 8'hD4, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0] + 10'd2]);
 	check_bit("A.txdone_intreq", 1'b1, u_dut.g_cd.cdrom_intreq[27]);
 	check_bit("A.irq",           1'b1, irq);
 
@@ -234,7 +240,7 @@ initial begin
 	u_dut.g_cd.cdrom_intreq           = CDINT_DRIVERECV;
 	set_config(CFG_RXD);
 	write_rxcmp(8'd4);
-	wait_rx_done(200, cyc);
+	wait_rx_done(20000, cyc);
 	check8 ("B.mem[0]", 8'h11, mem[16'h0000]);
 	check8 ("B.mem[1]", 8'h22, mem[16'h0001]);
 	check8 ("B.mem[2]", 8'h33, mem[16'h0002]);
@@ -255,7 +261,7 @@ initial begin
 	u_dut.g_cd.cdrom_receive_offset = 6'd0;
 	set_config(CFG_RXD);
 	write_rxcmp(8'd4);
-	repeat (40) @(posedge clk);
+	repeat (6000) @(posedge clk);
 	check8 ("C1.mem[3]", 8'hA3, mem[16'h0003]);
 	check8 ("C1.mem[4]", 8'h00, mem[16'h0004]);
 	check8 ("C1.rxinx",  8'd4,  u_dut.g_cd.cdcomrxinx);
@@ -263,7 +269,7 @@ initial begin
 	check_bit("C1.drivexmit", 1'b0, u_dut.g_cd.cdrom_intreq[30]);
 	check8 ("C1.recvlen", 8'd8, {2'h0, u_dut.g_cd.cdrom_receive_length});
 	write_rxcmp(8'd8);
-	wait_rx_done(200, cyc);
+	wait_rx_done(20000, cyc);
 	check8 ("C2.mem[4]", 8'hA4, mem[16'h0004]);
 	check8 ("C2.mem[7]", 8'hA7, mem[16'h0007]);
 	check8 ("C2.rxinx",  8'd8,  u_dut.g_cd.cdcomrxinx);
@@ -293,7 +299,7 @@ initial begin
 		end
 		checks++;
 	end
-	wait_tx_done(200, cyc);
+	wait_tx_done(20000, cyc);
 	check8 ("D.cmd[0]", 8'hEE, u_dut.g_cd.cdrom_command_buffer[0]);
 
 	$display("--- Test E: TX gated by ENABLE ---");
@@ -305,16 +311,16 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'd0;
 	set_config(CFG_TXD | CFG_ENA);
 	write_txcmp(8'd1);
-	repeat (60) @(posedge clk);
+	repeat (6000) @(posedge clk);
 	check8 ("E.cmdlen_stays_0", 8'd0, {2'h0, u_dut.g_cd.cdrom_command_length});
 	check8 ("E.txinx_stays_0",  8'd0, u_dut.g_cd.cdcomtxinx);
 	check_bit("E.txdone_clear", 1'b0, u_dut.g_cd.cdrom_intreq[27]);
 	set_config(CFG_TXD);
-	wait_tx_done(200, cyc);
+	wait_tx_done(20000, cyc);
 	check8 ("E.cmd[0]_after", 8'h99, u_dut.g_cd.cdrom_command_buffer[0]);
 	check8 ("E.txinx_after",  8'd1,  u_dut.g_cd.cdcomtxinx);
 
-	$display("--- Test F: TX gated by receive_length ---");
+	$display("--- Test F: TX keeps fetching while a reply waits, the drive parses after it ---");
 	do_reset();
 	bus_write_long(5'b00100, 32'hFF000000);
 	set_misc_base(24'h060000);
@@ -326,12 +332,15 @@ initial begin
 	u_dut.g_cd.cdrom_receive_offset   = 6'd0;
 	set_config(CFG_TXD);
 	write_txcmp(8'd1);
-	repeat (60) @(posedge clk);
-	check8 ("F.cmdlen_stays_0", 8'd0, {2'h0, u_dut.g_cd.cdrom_command_length});
-	check8 ("F.txinx_stays_0",  8'd0, u_dut.g_cd.cdcomtxinx);
+	repeat (6000) @(posedge clk);
+	check8 ("F.txinx_fetched", 8'd1, u_dut.g_cd.cdcomtxinx);
+	check_bit("F.txdone",      1'b1, u_dut.g_cd.cdrom_intreq[27]);
+	check8 ("F.cmdlen_held",   8'd0, {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("F.fifo",          8'd1, u_dut.g_cd.tx_fifo_wr - u_dut.g_cd.tx_fifo_rd);
 	u_dut.g_cd.cdrom_receive_length = 6'd0;
-	wait_tx_done(200, cyc);
-	check8 ("F.cmd[0]_after", 8'h77, u_dut.g_cd.cdrom_command_buffer[0]);
+	repeat (8) @(posedge clk);
+	check8 ("F.cmd[0]_after",  8'h77, u_dut.g_cd.cdrom_command_buffer[0]);
+	check8 ("F.cmdlen_after",  8'd1,  {2'h0, u_dut.g_cd.cdrom_command_length});
 
 	$display("--- Test G: TX index wrap ---");
 	do_reset();
@@ -345,11 +354,12 @@ initial begin
 	u_dut.g_cd.cdcomtxinx           = 8'hFE;
 	set_config(CFG_TXD);
 	write_txcmp(8'h02);
-	wait_tx_done(400, cyc);
+	wait_tx_done(20000, cyc);
 	check8 ("G.cmd[0]", 8'h0B, u_dut.g_cd.cdrom_command_buffer[0]);
-	check8 ("G.cmd[1]", 8'h02, u_dut.g_cd.cdrom_command_buffer[1]);
-	check8 ("G.cmd[2]", 8'h03, u_dut.g_cd.cdrom_command_buffer[2]);
-	check8 ("G.cmd[3]", 8'h04, u_dut.g_cd.cdrom_command_buffer[3]);
+	check8 ("G.cmdlen", 8'd1,  {2'h0, u_dut.g_cd.cdrom_command_length});
+	check8 ("G.fifo[0]", 8'h02, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0]]);
+	check8 ("G.fifo[1]", 8'h03, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0] + 10'd1]);
+	check8 ("G.fifo[2]", 8'h04, u_dut.g_cd.tx_fifo[u_dut.g_cd.tx_fifo_rd[9:0] + 10'd2]);
 	check8 ("G.txinx",  8'h02, u_dut.g_cd.cdcomtxinx);
 	check_bit("G.txdone", 1'b1, u_dut.g_cd.cdrom_intreq[27]);
 
@@ -364,7 +374,7 @@ initial begin
 	bfm_extra_delay = 5;
 	set_config(CFG_TXD);
 	write_txcmp(8'd2);
-	wait_tx_done(400, cyc);
+	wait_tx_done(20000, cyc);
 	check8 ("H.cmd[0]", 8'hF0, u_dut.g_cd.cdrom_command_buffer[0]);
 	check8 ("H.cmd[1]", 8'hF1, u_dut.g_cd.cdrom_command_buffer[1]);
 	check8 ("H.txinx",  8'd2,  u_dut.g_cd.cdcomtxinx);

@@ -10,7 +10,8 @@ vlog -sv -quiet ../../memory_router.v
 vlog -sv -quiet ../../chipdma_arb.v
 vlog -sv -quiet tb_akiko_chipram_master.sv
 
-vsim -c -voptargs=+acc work.tb_akiko_chipram_master
+vsim -c -onfinish stop -voptargs=+acc work.tb_akiko_chipram_master
+onbreak {resume}
 run -all
 
 set num_errs [examine -value /tb_akiko_chipram_master/errs]

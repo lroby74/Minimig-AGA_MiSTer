@@ -23,6 +23,8 @@ wire  [15:0] audio_r;
 cdda #(.CLK_RATE(441000)) dut (
 	.CLK    (clk),
 	.nRESET (reset_n),
+	.NTSC   (1'b0),
+	.FLUSH  (1'b0),
 	.WRITE_REQ (write_req),
 	.WRITE  (write_pulse),
 	.DIN    (din),
