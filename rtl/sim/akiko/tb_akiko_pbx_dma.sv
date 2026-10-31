@@ -257,11 +257,11 @@ initial begin
 	set_addressdata(24'h010000);
 	set_config(CFG_ENABLE | CFG_PBX);
 	check8("A.counter_init", 8'd0, u_dut.g_cd.cdrom_sector_counter);
-	check_bit("A.sec_req_no_pbx", 1'b0, hps_sec_req);
+	check_bit("A.sec_req_queue", 1'b1, hps_sec_req);
 	push_sector(8'h10);
 	check_bit("A.ready_after_push", 1'b1, u_dut.g_cd.sector_ready);
 	write_pbx(16'h0001);
-	check_bit("A.sec_req_low",  1'b0, hps_sec_req);
+	check_bit("A.sec_req_room", 1'b1, hps_sec_req);
 	wait_pbx_clear(20000, cyc);
 	$display("    A: pbx clear in %0d cycles", cyc);
 	check_slot("A", 'h10000, 8'h10, 8'd0);
@@ -331,16 +331,16 @@ initial begin
 	check8("D.counter_after_enable", 8'd0, u_dut.g_cd.cdrom_sector_counter);
 
 	$display("--- Test E: sec_req protocol ---");
-	check_bit("E.sec_req_idle", 1'b0, hps_sec_req);
+	check_bit("E.sec_req_idle", 1'b1, hps_sec_req);
 	write_pbx(16'h0008);
 	@(posedge clk); @(posedge clk);
 	check_bit("E.sec_req_pending", 1'b1, hps_sec_req);
 	push_sector(8'h80);
-	check_bit("E.sec_req_after_push", 1'b0, hps_sec_req);
+	check_bit("E.sec_req_after_push", 1'b1, hps_sec_req);
 	wait_pbx_clear(20000, cyc);
 	$display("    E: slot3 done in %0d cycles", cyc);
 	check_slot("E.slot3", 'h10000 + 3*4096, 8'h80, 8'd0);
-	check_bit("E.sec_req_after_done", 1'b0, hps_sec_req);
+	check_bit("E.sec_req_after_done", 1'b1, hps_sec_req);
 	check8("E.counter5", 8'd1, u_dut.g_cd.cdrom_sector_counter);
 
 	$display("--- Test F: RX preempts PBX ---");
